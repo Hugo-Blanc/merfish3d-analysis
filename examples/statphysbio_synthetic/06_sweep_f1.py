@@ -171,9 +171,9 @@ def decode_pixels(
 def sweep_decode_params(
     root_path: Path,
     gt_path: Path,
-    ufish_threshold_range=(0.1, 0.6),
+    ufish_threshold_range=(0.1, 0.4),
     ufish_threshold_step=0.05,
-    min_pixels_range=(2, 14),
+    min_pixels_range=(2, 6),
     min_pixels_step=1,
     fdr_range=(0.05, 0.3),
     fdr_step=0.05
@@ -209,6 +209,7 @@ def sweep_decode_params(
     for fdr in fdr_values:
         for min_pixels in min_pixels_values:
             for ufish in ufish_values:
+                print(f"Running with fdr={fdr}, min_pixels={min_pixels}, ufish_threshold={ufish}")
                 params = {
                     "fdr": round(fdr, 2),
                     "min_pixels": min_pixels,
@@ -238,6 +239,6 @@ def sweep_decode_params(
         json.dump(results, file, indent=2)
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/opm3/20241218_statphysbio/sim_acquisition")
-    gt_path = Path(r"/mnt/opm3/20241218_statphysbio/GT_spots.csv")
+    root_path = Path(r"/mnt/d/EQUIPEX/Data/2025012025_statphysbio_simulation/fixed/sim_acquisition")
+    gt_path = Path(r"/mnt/d/EQUIPEX/Data/2025012025_statphysbio_simulation/fixed/GT_spots.csv")
     sweep_decode_params(root_path=root_path, gt_path=gt_path)

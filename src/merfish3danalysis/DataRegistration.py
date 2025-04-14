@@ -306,6 +306,12 @@ class DataRegistration:
                         round=self._round_ids[0],
                         return_future=False
                     )
+                except UnboundLocalError :
+                    ref_image_decon = self._datastore.load_local_registered_image(
+                        tile=self._tile_id,
+                        round=self._round_ids[0],
+                        return_future=False
+                    )
                 
 
                 mov_image_decon = chunked_cudadecon(

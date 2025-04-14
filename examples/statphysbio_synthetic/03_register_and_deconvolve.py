@@ -107,7 +107,7 @@ def global_register_data(
         del polyDT_fused
         
         filename = 'polyDT_max_projection.ome.tiff'
-        filename_path = datastore._datastore_path / Path("segmentation") / Path("cellpose") / Path(filename)
+        filename_path = datastore._datastore_path / Path("segmentation") / Path(filename)
         with TiffWriter(filename_path, bigtiff=True) as tif:
             metadata={
                 'axes': 'YX',
@@ -135,6 +135,6 @@ def global_register_data(
             )
     
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data/presse/max_simdata/local_ztest_3_dz_1/sim_acquisition")
+    root_path = Path(r"/mnt/d/EQUIPEX/Data/2025012025_statphysbio_simulation/fixed/sim_acquisition")
     local_register_data(root_path)
-    global_register_data(root_path,create_max_proj_tiff=False)
+    global_register_data(root_path,create_max_proj_tiff=True)

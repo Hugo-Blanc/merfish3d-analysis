@@ -77,8 +77,11 @@ def convert_simulation(
         image_path = tile_path / Path("data_r"+str(r_idx+1).zfill(4)+"_tile"+str(fake_tile_id).zfill(4)+".tif")
         imwrite(
             image_path,
-            np.squeeze(reshaped_simulation_data[r_idx,:,:,:]).astype(np.uint16)
-        )
+            np.squeeze(reshaped_simulation_data[r_idx,:,:,:]).astype(np.uint16),
+            imagej=True,
+                resolution=(1 / yx_pixel_um,
+                            1 / yx_pixel_um),
+                metadata={"axes": "ZCYX", "unit": "um", "spacing": z_pixel_um})
         
         stage_metadata_path = simulated_acq_path / Path("data_r"+str(r_idx+1).zfill(4)+"_tile"+str(fake_tile_id).zfill(4)+"_stage_positions.csv")
         current_stage_data = [{'stage_x': float(fake_stage_position_zyx_um[2]),
@@ -131,5 +134,5 @@ def convert_simulation(
     shutil.copy(sim_bitorder_path, sim_acq_bitorder_path)
     
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data/presse/max_simdata/local_ztest_3_dz_1")
+    root_path = Path(r"/mnt/d/EQUIPEX/Data/2025012025_statphysbio_simulation/fixed")
     convert_simulation(root_path=root_path)

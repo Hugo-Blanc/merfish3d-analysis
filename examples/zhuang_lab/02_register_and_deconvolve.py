@@ -37,8 +37,8 @@ def local_register_data(root_path: Path):
     registration_factory = DataRegistration(
         datastore=datastore, 
         perform_optical_flow=False, 
-        overwrite_registered=True,
-        save_all_polyDT_registered=False
+        overwrite_registered=False,
+        save_all_polyDT_registered=True
     )
 
     # run local registration across rounds
@@ -97,8 +97,8 @@ def global_register_data(
 
         tile_grid_positions = {
             "z": 0.0, # the data does not contain z positions, so we center at 0.
-            "y": np.round(tile_position_zyx_um[0], 2),
-            "x": np.round(tile_position_zyx_um[1], 2),
+            "y": np.round(tile_position_zyx_um[0][0], 2),
+            "x": np.round(tile_position_zyx_um[0][1], 2),
         }
 
         im_data = []
@@ -234,6 +234,6 @@ def global_register_data(
             )
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data/zhuang/")
-    #local_register_data(root_path)
+    root_path = Path(r"/mnt/e/Data")
+    # local_register_data(root_path)
     global_register_data(root_path,create_max_proj_tiff=True)

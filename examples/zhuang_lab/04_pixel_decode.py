@@ -72,5 +72,5 @@ def pixeldecode_and_baysor(
         datastore.save_mtx(spots_source="baysor")
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data/zhuang/")
-    pixeldecode_and_baysor(root_path=root_path,run_baysor=True,fdr_target=.05)
+    root_path = Path(r"/mnt/e/Data")
+    pixeldecode_and_baysor(root_path=root_path,run_baysor=False,fdr_target=.05)

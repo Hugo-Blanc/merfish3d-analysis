@@ -134,7 +134,7 @@ def run_cellpose(root_path,
     pixel_spacing_rois = roiwrite(global_roi_path,global_spacing_rois)
         
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data/zhuang/")
+    root_path = Path(r"/mnt/e/Data")
     cellpose_parameters = {
         'normalization' : [1.0,99.0],
         'flow_threshold' : 0.4,

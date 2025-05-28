@@ -29,27 +29,30 @@ def create_overview_image(root_path: Path, n_tiles: int = 2):
     
     # Load n_tiles
     tiles = []
-    for tile_idx in tqdm(range(n_tiles), desc="loading tiles"):
-        tile_path = root_path / Path(f"mop/mouse_sample1_raw/mouse1_sample1_raw/aligned_images{tile_idx}.tif")
+    tile_list = [24,25,26,27,37,38,39,40,45,46,47,48,53,54,55,56]
+    n_tiles = len(tile_list)
+    # for tile_idx in tqdm(range(n_tiles), desc="loading tiles"):
+    for tile_idx in tqdm(tile_list, desc="loading tiles"):
+        tile_path = root_path / Path(f"mop/mouse1_sample1_raw/aligned_images{tile_idx}.tif")
         store = imread(tile_path, mode='r', aszarr=True)
         z = zarr.open(store, mode='r')
         tiles.append(np.max(z[38, :].astype(np.uint16), axis=0))
     tiles = np.asarray(tiles)
 
     # Load the spatial calibration (microns per pixel)
-    microscope_json_path = root_path / Path(r"mop/mouse_sample1_raw/additional_files/microscope.json")
+    microscope_json_path = root_path / Path(r"mop/additional_files/microscope.json")
     with open(microscope_json_path, 'r') as file:
         data = json.load(file)
     yx_pixel_size_um = float(data["microns_per_pixel"])
 
     # Load the global stage translations for each tile in microns
     stage_translation_path = root_path / Path(
-        r"mop/mouse_sample1_raw/additional_files/fov_positions/mouse1_sample1.txt"
+        r"mop/additional_files/fov_positions/mouse1_sample1.txt"
     )
     stage_position_df = pd.read_csv(stage_translation_path, header=None)
     stage_positions = stage_position_df.values
     tile_translations = []
-    for tile_idx in range(n_tiles):
+    for tile_idx in tile_list:
         tile_translations.append(stage_positions[tile_idx, :])
     tile_translations = np.asarray(tile_translations)
 
@@ -149,7 +152,7 @@ def create_overview_image(root_path: Path, n_tiles: int = 2):
     plt.title('Tiles assuming (y,x) order')
     plt.grid(False)
     
-    plt.show()
+    plt.savefig(root_path / " test z max proj YX", dpi=300)
 
     # Plot the z max projections of the tiles assuming the stage file is in (x,y) order
     plt.figure(figsize=(10, 10))
@@ -159,10 +162,10 @@ def create_overview_image(root_path: Path, n_tiles: int = 2):
     plt.title('Tiles assuming (x,y) order')
     plt.grid(False)
 
-    plt.show()
+    plt.savefig(root_path / "test z max proj XY", dpi=300)
 
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data/zhuang/")
-    n_tiles = 2
+    root_path = Path(r"/mnt/e/Data/Zhuang_lab_dataset/")
+    n_tiles = 59
     create_overview_image(root_path,n_tiles)

@@ -528,15 +528,12 @@ class qi2labDataStore:
             New round and bit order.
         """
 
-        if isinstance(value, pd.DataFrame):
-            self._experiment_order = value
-        else:
-            channel_list = []
-            for idx in range(len(self._channels_in_data)):
-                channel_list.append(str(self._channels_in_data[idx]))
-            self._experiment_order = pd.DataFrame(
-                value, columns=channel_list, dtype="int64"
-            )
+        channel_list = []
+        for idx in range(len(self._channels_in_data)):
+            channel_list.append(str(self._channels_in_data[idx]))
+        self._experiment_order = pd.DataFrame(
+            value, columns=channel_list, dtype="int64"
+        )
 
         zattrs_path = self._calibrations_zarr_path / Path(".zattrs")
         calib_zattrs = self._load_from_json(zattrs_path)
@@ -1768,11 +1765,13 @@ class qi2labDataStore:
                 readout_bit_path.mkdir()
                 readout_bit_attrs_path = readout_bit_path / Path(".zattrs")
                 fiducial_channel = str(self._channels_in_data[0])
-                readout_one_channel = str(self._channels_in_data[1])
+                # get readout channel
+                df_mask_exp_bit = self._experiment_order[self._channels_in_data[1:]].isin([bit_idx+1]).any()
+                readout_channel = df_mask_exp_bit[df_mask_exp_bit].index[0]
 
                 if len(self._channels_in_data) == 3:
                     readout_two_channel = str(self._channels_in_data[2])
-                    condition_one = self._experiment_order[readout_one_channel] == (
+                    condition_one = self._experiment_order[readout_channel] == (
                         bit_idx + 1
                     )
                     condition_two = self._experiment_order[readout_two_channel] == (
@@ -1782,7 +1781,7 @@ class qi2labDataStore:
 
                 else:
                     combined_condition = self._experiment_order[
-                        readout_one_channel
+                        readout_channel
                     ] == (bit_idx + 1)
                 matching_rows = self._experiment_order.loc[combined_condition]
 

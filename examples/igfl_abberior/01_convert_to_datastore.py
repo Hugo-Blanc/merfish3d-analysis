@@ -51,7 +51,7 @@ def convert_data(
         imaging round, in channel order. Default of `None` assumes
         the file is in the root_path.
     """
-
+    assert root_path.exists(), f"{root_path} was not found."
     # load codebook
     # --------------
     if codebook_path is None:
@@ -61,8 +61,8 @@ def convert_data(
         
     # load sample tile to extract acquisition metadata
     root_name = root_path.stem
-    raw_folder = root_path / "Raw"
-    sample_round_folder = raw_folder / f"{root_name}_r0001"
+    raw_folder = root_path / "Raw ome tiff"
+    sample_round_folder = raw_folder / f"{root_name}_r{(1):04d}"
     assert sample_round_folder.exists(), f"{sample_round_folder} doesn't exists."
     sample_list_tiles = list(sample_round_folder.glob("*.ome.tiff"))
     sample_img_path = sample_list_tiles[0]
@@ -348,8 +348,7 @@ def convert_data(
     datastore.datastore_state = datastore_state
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/d//EQUIPEX/Data/20250603_Test_parsing")
-
+    root_path = Path(r"/mnt/d/EQUIPEX/Data/20250404_Abberior_Merfish_7C")
     convert_data(
         root_path=root_path,
     )

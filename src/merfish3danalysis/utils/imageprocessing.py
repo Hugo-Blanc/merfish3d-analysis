@@ -20,6 +20,7 @@ from pycudadecon import decon
 from ryomen import Slicer
 import builtins
 from basicpy import BaSiC
+from tqdm import tqdm 
 
 # GPU
 CUPY_AVIALABLE = True
@@ -362,13 +363,13 @@ def chunked_cudadecon(
 
     slices = Slicer(
         image_padded,
-        crop_size=(image_padded.shape[0], 1600, 1600),
+        crop_size=(image_padded.shape[0], 1024, 1024),
         overlap=(0, 32, 32),
         batch_size=1,
         pad=True,
     )
 
-    for crop, source, destination in slices:
+    for crop, source, destination in tqdm(slices, desc="sclices"):
         builtins.print= no_op
         image_decon_padded[destination] = decon(
             images=crop,

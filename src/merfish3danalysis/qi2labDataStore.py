@@ -2191,7 +2191,104 @@ class qi2labDataStore:
             print(tile_id, round_id)
             print("Error writing stage position attribute.")
             return None
+        
+    def load_local_psf_idx(
+        self,
+        tile: Union[int, str],
+        round: Optional[Union[int, str]] = None,
+        bit: Optional[Union[int, str]] = None,
+    ) -> Optional[tuple[float, float]]:
+        """Load wavelengths for fidicual OR readout bit for one tile.
+        
+        Parameters
+        ----------
+        tile : Union[int, str]
+            Tile index or tile id.
+        round : Optional[Union[int, str]]   
+            Round index or round id.
+        bit : Optional[Union[int, str]]
+            Bit index or bit id.
+        
+        Returns
+        -------
+        wavelengths_um : Optional[tuple[float, float]]
+            Wavelengths for fidicual OR readout bit for one tile.
+        """
 
+        if (round is None and bit is None) or (round is not None and bit is not None):
+            print("Provide either 'round' or 'bit', but not both")
+            return None
+
+        if isinstance(tile, int):
+            if tile < 0 or tile > self._num_tiles:
+                print("Set tile index >=0 and <=" + str(self._num_tiles))
+                return None
+            else:
+                tile_id = self._tile_ids[tile]
+        elif isinstance(tile, str):
+            if tile not in self._tile_ids:
+                print("set valid tiled id")
+                return None
+            else:
+                tile_id = tile
+        else:
+            print("'tile' must be integer index or string identifier")
+            return None
+
+        if bit is not None:
+            if isinstance(bit, int):
+                if bit < 0 or bit > len(self._bit_ids):
+                    print("Set bit index >=0 and <=" + str(len(self._bit_ids)))
+                    return None
+                else:
+                    local_id = self._bit_ids[bit]
+            elif isinstance(bit, str):
+                if bit not in self._bit_ids:
+                    print("Set valid bit id")
+                    return None
+                else:
+                    local_id = bit
+            else:
+                print("'bit' must be integer index or string identifier")
+                return None
+            zattrs_path = str(
+                self._readouts_root_path
+                / Path(tile_id)
+                / Path(local_id + ".zarr")
+                / Path(".zattrs")
+            )
+        else:
+            if isinstance(round, int):
+                if round < 0:
+                    print("Set round index >=0 and <" + str(self._num_rounds))
+                    return None
+                else:
+                    local_id = self._round_ids[round]
+            elif isinstance(round, str):
+                if round not in self._round_ids:
+                    print("Set valid round id")
+                    return None
+                else:
+                    local_id = round
+            else:
+                print("'round' must be integer index or string identifier")
+                return None
+            zattrs_path = str(
+                self._polyDT_root_path
+                / Path(tile_id)
+                / Path(local_id + ".zarr")
+                / Path(".zattrs")
+            )
+
+        try:
+            attributes = self._load_from_json(zattrs_path)
+            psf_idx = attributes["psf_idx"]
+            return psf_idx
+        except KeyError:
+            print("Psf idx attributes not found.")
+            return None
+        
+        
     def load_local_wavelengths_um(
         self,
         tile: Union[int, str],

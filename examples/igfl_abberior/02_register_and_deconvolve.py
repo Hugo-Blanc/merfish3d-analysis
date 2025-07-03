@@ -30,7 +30,7 @@ def local_register_data(root_path: Path):
     registration_factory = DataRegistration(
         datastore=datastore, 
         perform_optical_flow=True, 
-        overwrite_registered=True,
+        overwrite_registered=False,
         save_all_polyDT_registered=False, 
         decon_iters=10,
         decon_background=0,
@@ -84,16 +84,16 @@ def global_register_data(
 
         voxel_zyx_um = datastore.voxel_size_zyx_um
 
-        scale = {"z": voxel_zyx_um[0], "y": voxel_zyx_um[1], "x": voxel_zyx_um[2]}
+        scale = {"z": voxel_zyx_um[0], "y": voxel_zyx_um[1], "x": voxel_zyx_um[1]}
 
-        tile_position_zyx_um = datastore.load_local_stage_position_zyx_um(
+        tile_stage_position_zyx_um, tile_affine_zyx_px = datastore.load_local_stage_position_zyx_um(
             tile_id, round_id
         )
 
         tile_grid_positions = {
-            "z": np.round(tile_position_zyx_um[0], 2),
-            "y": np.round(tile_position_zyx_um[1], 2),
-            "x": np.round(tile_position_zyx_um[2], 2),
+            "z": np.round(tile_stage_position_zyx_um[0], 2),
+            "y": np.round(tile_stage_position_zyx_um[1], 2),
+            "x": np.round(tile_stage_position_zyx_um[2], 2),
         }
 
         im_data = []
@@ -114,7 +114,7 @@ def global_register_data(
         del im_data
         gc.collect()
 
-    # perform registration in three steps, from most downsampling to least.
+    # perform registration in 2 steps, from most downsampling to least.
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         with dask.diagnostics.ProgressBar():
             _ = registration.register(
@@ -162,12 +162,13 @@ def global_register_data(
             transform_key="translation_registered",
             output_spacing={
                 "z": voxel_zyx_um[0],
-                "y": voxel_zyx_um[1] * np.round(voxel_zyx_um[0] / voxel_zyx_um[1], 1),
-                "x": voxel_zyx_um[2] * np.round(voxel_zyx_um[0] / voxel_zyx_um[2], 1),
+                "y": voxel_zyx_um[1], 
+                "x": voxel_zyx_um[1],
             },
             output_chunksize=128,
             overlap_in_pixels=64,
         )
+        # * np.round(voxel_zyx_um[0] / voxel_zyx_um[1], 1),
 
         fused_msim = msi_utils.get_msim_from_sim(fused_sim, scale_factors=[])
         affine = msi_utils.get_transform_from_msim(
@@ -202,16 +203,13 @@ def global_register_data(
     if create_max_proj_tiff:
         # load downsampled, fused polyDT image and coordinates 
         polyDT_fused, _, _, spacing_zyx_um = datastore.load_global_fidicual_image(return_future=False)
-        
         # create max projection
         polyDT_max_projection = np.max(np.squeeze(polyDT_fused),axis=0)
         del polyDT_fused
         
-        filename = 'polyDT_max_projection.ome.tiff'
-        cellpose_path = datastore._datastore_path / Path("segmentation") / Path("cellpose")
-        cellpose_path.mkdir(exist_ok=True)
-        filename_path = datastore._datastore_path / Path("segmentation") / Path("cellpose") / Path(filename)
-        with TiffWriter(filename_path, bigtiff=True) as tif:
+        filename = 'DAPI_max_projection.ome.tiff'
+        filename_path = datastore._datastore_path / Path("fused") / Path(filename)
+        with TiffWriter(filename_path, bigtiff=True, mode='w') as tif:
             metadata={
                 'axes': 'YX',
                 'SignificantBits': 16,
@@ -225,13 +223,13 @@ def global_register_data(
                 compressionargs={'level': 8},
                 predictor=True,
                 photometric='minisblack',
-                resolutionunit='CENTIMETER',
+                resolutionunit='MICROMETER',
             )
             tif.write(
                 polyDT_max_projection,
                 resolution=(
-                    1e4 / spacing_zyx_um[1],
-                    1e4 / spacing_zyx_um[2]
+                    1e6 / spacing_zyx_um[1],
+                    1e6 / spacing_zyx_um[2]
                 ),
                 **options,
                 metadata=metadata

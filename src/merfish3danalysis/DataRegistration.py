@@ -249,12 +249,12 @@ class DataRegistration:
         del stage_positions
         gc.collect()
 
-    def _generate_registrations(self, ref_round_id : int | None = 0):
+    def _generate_registrations(self):
         """Generate registered, deconvolved fiducial data and save to datastore."""
         
         test =  self._datastore.load_local_registered_image(
             tile=self._tile_id,
-            round=self._round_ids[ref_round_id]
+            round=self._round_ids[0]
         )
         
         if test is None:
@@ -264,15 +264,15 @@ class DataRegistration:
             
         if not (has_reg_decon_data) or self._overwrite_registered:
             
-            psf_idx = self._data_raw.load_local_psf_idxtile(self._tile_id,
-                    round=self._round_ids[ref_round_id])
+            psf_idx = self._datastore.load_local_psf_idx(self._tile_id,
+                    round=self._round_ids[0])
             
             ex_wavelength_um, em_wavelength_um = self._datastore.load_local_wavelengths_um(
                 tile=self._tile_id,
-                round=self._round_ids[ref_round_id])
+                round=self._round_ids[0])
             
             ref_image_decon = chunked_cudadecon(
-                image=np.asarray(self._data_raw[ref_round_id].result(),dtype=np.uint16),
+                image=np.asarray(self._data_raw[0].result(),dtype=np.uint16),
                 psf=self._psfs[psf_idx, :],
                 image_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
                 psf_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
@@ -287,11 +287,11 @@ class DataRegistration:
                 ref_image_decon,
                 tile=self._tile_id,
                 deconvolution=True,
-                round=self._round_ids[ref_round_id]
+                round=self._round_ids[0]
             )
 
         for r_idx, round_id in enumerate(tqdm(self._round_ids[1:],desc="rounds")):
-
+            
             test =  self._datastore.load_local_registered_image(
                 tile=self._tile_id,
                 round=round_id
@@ -318,7 +318,7 @@ class DataRegistration:
                         round=self._round_ids[r_idx],
                         return_future=False
                     )
-                psf_idx = self._data_raw.load_local_psf_idxtile(self._tile_id,
+                psf_idx = self._datastore.load_local_psf_idx(self._tile_id,
                     round=self._round_ids[r_idx])
             
                 ex_wavelength_um, em_wavelength_um = self._datastore.load_local_wavelengths_um(
@@ -329,7 +329,7 @@ class DataRegistration:
                     image=np.asarray(
                         self._data_raw[r_idx].result(),dtype=np.uint16
                     ),
-                    psf=psf_idx,
+                    psf=self._psfs[psf_idx, :],
                     image_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
                     psf_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
                     wavelength_um=em_wavelength_um,
@@ -513,7 +513,7 @@ class DataRegistration:
             )
             r_idx = r_idx - 1
             
-            psf_idx = self._data_raw.load_local_psf_idxtile(self._tile_id,
+            psf_idx = self._datastore.load_local_psf_idx(self._tile_id,
                     round=self._round_ids[r_idx])
             
             ex_wavelength_um, em_wavelength_um = self._datastore.load_local_wavelengths_um(

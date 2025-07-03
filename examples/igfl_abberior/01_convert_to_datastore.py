@@ -79,17 +79,17 @@ def convert_data(
     num_rounds = len(list(raw_folder.glob(f"{root_name}_r*"))) # TODO fetch num rounds : ex num of round folder ? or master recipe ?
     num_tiles = len(sample_list_tiles)
     num_ch = int(ome_metadata_dict["Image"]["Pixels"]["@SizeC"])
-    # z_step_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeZ"]) * 10e6
-    z_step_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeZ"]) * 10e5
-    yx_pixel_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeX"]) * 10e6 # NB : x and y resolution are slightly different in ome metadata
+    # z_step_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeZ"]) * 1e6
+    z_step_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeZ"]) * 1e6
+    yx_pixel_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeX"]) * 1e6 # NB : x and y resolution are slightly different in ome metadata
     voxel_size_zyx_um = [z_step_um, yx_pixel_um]
     na = float(ome_metadata_dict["Folder"][2]["Description"]["objective_lens"]["name"].split("NA")[-1].split("(")[0]) #TODO fix messy ome-xml
     ri = 1.4 # TODO get from the ome-metadata, correspond to silicon ri
     ri_sample = 1.38 #TODO estimate sample ri
     
     channel_names = [chan["@Name"] for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
-    em_wavelengths_um = [float(chan["@EmissionWavelength"])*10e6 for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
-    ex_wavelengths_um = [float(chan["@ExcitationWavelength"])*10e6 for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
+    em_wavelengths_um = [float(chan["@EmissionWavelength"])*1e6 for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
+    ex_wavelengths_um = [float(chan["@ExcitationWavelength"])*1e6 for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
     
     # channel_idxs = list(range(num_ch))
     # channels_active = [True for _ in range(num_ch)]
@@ -176,7 +176,7 @@ def convert_data(
     datastore.camera = "aberrior igfl"
     datastore.tile_overlap = float(ome_metadata_dict["Folder"][2]["Description"]["region"]["tiles_overlap"])/100
     datastore.e_per_ADU = 1 # TODO necessary ? check for compatibility
-    datastore.offset = 2**15 # TODO necessary ? check for compatibility
+    datastore.offset = 0  # TODO necessary ? check for compatibility   2**15
     datastore.na = na
     datastore.ri = ri
     datastore.binning = 1 # TODO necessary ? check for compatibility
@@ -233,7 +233,7 @@ def convert_data(
             # load ome metadata
             image_ome_tif = TiffFile(image_path)
             assert image_ome_tif.is_ome, f"{image_ome_tif} is not a OME TIF. Cannot extract metadata." 
-            ome_metadata_dict = xmltodict.parse(sample_ome_tif.ome_metadata)['OME']
+            ome_metadata_dict = xmltodict.parse(image_ome_tif.ome_metadata)['OME']
             description_json = ome_metadata_dict["Folder"][2]['Description']
             ome_metadata_dict["Folder"][2]['Description']= json.loads(description_json)
             
@@ -327,7 +327,7 @@ def convert_data(
             )
             
             # write readout channels and metadata
-            for dye_idx, dye_name in enumerate(dye_order): 
+            for dye_idx, dye_name in tqdm(enumerate(dye_order), desc="bit channels", leave=False): 
                 datastore.save_local_corrected_image(
                     np.squeeze(raw_image[dye_to_chan_dict[dye_name], :]).astype(np.uint16),
                     tile=tile_idx,

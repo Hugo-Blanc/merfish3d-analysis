@@ -3,10 +3,11 @@ Convert statphysbio simulation into a fake acquisition
 
 This is an example on how to convert a statphysbio simulation into a fake 
 qi2lab acquisition. The simulation comes as a flat tiff file with all z planes
-for yellow, red, blue channels in a given round, then repeat for the next round.
+for red, yellow, blue channels in a given round, then repeat for the next round.
 
 Required user parameters for system dependent variables are at end of script.
 
+Shepherd 2025/08 - update for new BiFISH simulations.
 Shepherd 2024/12 - create script based on metadata from Max in statphysbio lab.
 """
 
@@ -47,7 +48,7 @@ def convert_simulation(
     # load simulated data
     simulation_data_path = root_path / Path("aligned_1.tiff")
     simulation_data = imread(simulation_data_path)
-    
+    print(f"simulation shape: {simulation_data.shape}")
     # reshape simulation to match experimental design
     reshaped_simulation_data = simulation_data.reshape(
         num_rounds,
@@ -58,8 +59,10 @@ def convert_simulation(
     )
     
     # swap yellow and red channel to match how the microscope acquires data (red, yellow, blue)
-    reshaped_simulation_data[:,[0,1],:,:,:] = reshaped_simulation_data[:,[1,0],:,:,:]
-    reshaped_simulation_data = np.swapaxes(reshaped_simulation_data,1,2)
+    print(f"reshaped simulation: {reshaped_simulation_data.shape}")
+    # reshaped_simulation_data[:,[0,1],:,:,:] = reshaped_simulation_data[:,[1,0],:,:,:]
+    # reshaped_simulation_data = np.swapaxes(reshaped_simulation_data,1,2)
+    print(f"reshaped simulation after swap: {reshaped_simulation_data.shape}")
     
     fake_stage_position_zyx_um = [
         0.0,
@@ -106,6 +109,7 @@ def convert_simulation(
                         'num_t': int(1),
                         'num_r': int(num_rounds),
                         'num_xyz': int(1),
+                        'num_z' : int(num_z),
                         'num_ch': int(num_ch),
                         'na' : float(1.35),
                         'ri' : float(1.51),

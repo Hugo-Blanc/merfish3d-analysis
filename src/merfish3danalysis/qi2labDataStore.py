@@ -1225,7 +1225,18 @@ class qi2labDataStore:
             Path to parquet file.
         """
 
-        df.to_parquet(parquet_path)
+        # df.to_parquet(
+        #     parquet_path,
+        #     engine="pyarrow",
+        #     version="1.0",
+        #     write_statistics=False
+        # )
+
+        df.to_parquet(
+            parquet_path,
+            engine="fastparquet", 
+            index=False
+        )
 
     def _parse_datastore(self):
         """Parse datastore to discover available components."""
@@ -1465,13 +1476,13 @@ class qi2labDataStore:
 
                     for key in keys_to_check:
                         if key not in attributes.keys():
-                            raise KeyError("Rigid registration missing")
+                            raise KeyError(f"{round_id,tile_id} Rigid registration missing")
 
                     current_local_zarr_path = str(
                         self._polyDT_root_path
                         / Path(tile_id)
                         / Path(round_id + ".zarr")
-                        / Path("of_xform_px")
+                        / Path("opticalflow_xform_px")
                     )
 
                     try:
@@ -1480,8 +1491,9 @@ class qi2labDataStore:
                             self._zarrv2_spec.copy(),
                         )
                     except (IOError, OSError, ZarrError):
-                        print(tile_id, round_id)
-                        print("Optical flow registration data missing.")
+                        #print(tile_id, round_id)
+                        #print("Optical flow registration data missing.")
+                        pass
 
                 current_local_zarr_path = str(
                     self._polyDT_root_path
@@ -2922,7 +2934,7 @@ class qi2labDataStore:
             self._polyDT_root_path
             / Path(tile_id)
             / Path(round_id + ".zarr")
-            / Path("of_xform_px")
+            / Path("opticalflow_xform_px")
         )
         zattrs_path = str(
             self._polyDT_root_path
@@ -2958,11 +2970,14 @@ class qi2labDataStore:
                 return_future,
             )
             attributes = self._load_from_json(zattrs_path)
-            downsampling = np.asarray(
-                attributes["opticalflow_downsampling"], dtype=np.float32
+            block_size = np.asarray(
+                attributes["block_size"], dtype=np.float32
+            )
+            block_stride = np.asarray(
+                attributes["block_stride"], dtype=np.float32
             )
 
-            return of_xform_px, downsampling
+            return (of_xform_px, block_size, block_stride)
         except (IOError, OSError, ZarrError) as e:
             print(e)
             print("Error loading optical flow transform.")
@@ -2972,7 +2987,8 @@ class qi2labDataStore:
         self,
         of_xform_px: ArrayLike,
         tile: Union[int, str],
-        downsampling: Sequence[float],
+        block_size: Sequence[float],
+        block_stride: Sequence[float],
         round: Union[int, str],
         return_future: Optional[bool] = False,
     ):
@@ -2984,8 +3000,10 @@ class qi2labDataStore:
             Local fidicual optical flow matrix for one round and tile.
         tile : Union[int, str]
             Tile index or tile id.
-        downsampling : Sequence[float]
-            Downsampling factor.
+        block_size : Sequence[float]
+            Block size for pixel warp
+        block_stride: Sequence[float]
+            Block stride for pixel warp
         round : Union[int, str] 
             Round index or round id.
         return_future : Optional[bool]
@@ -3027,7 +3045,7 @@ class qi2labDataStore:
             self._polyDT_root_path
             / Path(tile_id)
             / Path(local_id + ".zarr")
-            / Path("of_xform_px")
+            / Path("opticalflow_xform_px")
         )
         current_local_zattrs_path = str(
             self._polyDT_root_path
@@ -3059,7 +3077,8 @@ class qi2labDataStore:
                 return_future,
             )
             attributes = self._load_from_json(current_local_zattrs_path)
-            attributes["opticalflow_downsampling"] = downsampling
+            attributes["block_size"] = block_size.tolist()
+            attributes["block_stride"] = block_stride.tolist()
             self._save_to_json(attributes, current_local_zattrs_path)
         except (IOError, OSError, TimeoutError):
             print("Error saving optical flow transform.")
@@ -3157,7 +3176,7 @@ class qi2labDataStore:
             )
 
         if not Path(current_local_zarr_path).exists():
-            print("Registered deconvolved image not found.")
+            #print("Registered deconvolved image not found.")
             return None
 
         try:
@@ -4294,7 +4313,7 @@ class qi2labDataStore:
 
         self._save_to_parquet(parsed_spots_df, current_global_filtered_decoded_path)
         
-    def save_mtx(self, spots_source: str = ""):
+    def save_mtx(self, spots_source: str = "baysor"):
         """Save mtx file for downstream analysis. Assumes Baysor has been run.
         
         Parameters

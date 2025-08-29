@@ -15,24 +15,9 @@ import numpy as np
 import gc
 from numpy.typing import ArrayLike
 from numba import njit, prange
-from typing import Sequence, Tuple
-from pycudadecon import decon
-from ryomen import Slicer
 import builtins
 from basicpy import BaSiC
 from tqdm import tqdm 
-
-# GPU
-CUPY_AVIALABLE = True
-try:
-    import cupy as cp  # type: ignore
-except ImportError:
-    xp = np
-    CUPY_AVIALABLE = False
-    from scipy import ndimage  # type: ignore
-else:
-    xp = cp
-    from cupyx.scipy import ndimage  # type: ignore
 
 
 def replace_hot_pixels(
@@ -55,30 +40,32 @@ def replace_hot_pixels(
         hotpixel corrected data
     """
 
-    data = xp.asarray(data, dtype=xp.float32)
-    noise_map = xp.asarray(noise_map, dtype=xp.float32)
+    # GPU
+    import cupy as cp  # type: ignore
+    from cupyx.scipy import ndimage  # type: ignore
+
+    data = cp.asarray(data, dtype=cp.float32)
+    noise_map = cp.asarray(noise_map, dtype=cp.float32)
 
     # threshold darkfield_image to generate bad pixel matrix
-    hot_pixels = xp.squeeze(xp.asarray(noise_map))
+    hot_pixels = cp.squeeze(cp.asarray(noise_map))
     hot_pixels[hot_pixels <= threshold] = 0
     hot_pixels[hot_pixels > threshold] = 1
-    hot_pixels = hot_pixels.astype(xp.float32)
-    inverted_hot_pixels = xp.ones_like(hot_pixels) - hot_pixels.copy()
+    hot_pixels = hot_pixels.astype(cp.float32)
+    inverted_hot_pixels = cp.ones_like(hot_pixels) - hot_pixels.copy()
 
-    data = xp.asarray(data, dtype=xp.float32)
+    data = cp.asarray(data, dtype=cp.float32)
     for z_idx in range(data.shape[0]):
         median = ndimage.median_filter(data[z_idx, :, :], size=3)
         data[z_idx, :] = inverted_hot_pixels * data[z_idx, :] + hot_pixels * median
 
     data[data < 0] = 0
 
-    if CUPY_AVIALABLE:
-        data = xp.asnumpy(data).astype(np.uint16)
-        gc.collect()
-        cp.clear_memo()
-        cp._default_memory_pool.free_all_blocks()
-    else:
-        data = data.astype(np.uint16)
+    data = cp.asnumpy(data).astype(np.uint16)
+    gc.collect()
+    cp.cuda.Stream.null.synchronize()
+    cp.get_default_memory_pool().free_all_blocks()
+    cp.get_default_pinned_memory_pool().free_all_blocks()
 
     return data
 
@@ -97,18 +84,21 @@ def estimate_shading(
     shading_image: ArrayLike
         estimated shading image
     """
+
+    # GPU
+
+    import cupy as cp  # type: ignore
+    from cupyx.scipy import ndimage  # type: ignore
+
     maxz_images = []
     for image in images:
-        maxz_images.append(xp.squeeze(xp.max(image.result(),axis=0)))    
+        maxz_images.append(cp.squeeze(cp.max(image.result(),axis=0)))    
 
-    if CUPY_AVIALABLE:
-        maxz_images = xp.asnumpy(maxz_images).astype(np.uint16)
-        gc.collect()
-        cp.clear_memo()
-        cp._default_memory_pool.free_all_blocks()
-    else:
-        maxz_images = maxz_images.astype(np.uint16)
-
+    maxz_images = cp.asnumpy(maxz_images).astype(np.uint16)
+    gc.collect()
+    cp.cuda.Stream.null.synchronize()
+    cp.get_default_memory_pool().free_all_blocks()
+    cp.get_default_pinned_memory_pool().free_all_blocks()
 
     original_print = builtins.print
     builtins.print = no_op
@@ -120,21 +110,22 @@ def estimate_shading(
     
     del basic
     gc.collect()
-    if CUPY_AVIALABLE:
-        cp.clear_memo()
-        cp._default_memory_pool.free_all_blocks()
+
+    cp.cuda.Stream.null.synchronize()
+    cp.get_default_memory_pool().free_all_blocks()
+    cp.get_default_pinned_memory_pool().free_all_blocks()
     
     return shading_correction
 
-def downsample_image_isotropic(image: ArrayLike, level: int = 2) -> ArrayLike:
-    """Numba accelerated isotropic downsampling
+def downsample_image_anisotropic(image: ArrayLike, level: tuple[int,int,int] = (2,6,6)) -> ArrayLike:
+    """Numba accelerated anisotropic downsampling
 
     Parameters
     ----------
     image: ArrayLike
         3D image to be downsampled
-    level: int
-        isotropic downsampling level
+    level: tuple[int,int,int], default=(2,6,6)
+        anisotropic downsampling level
 
     Returns
     -------
@@ -143,7 +134,7 @@ def downsample_image_isotropic(image: ArrayLike, level: int = 2) -> ArrayLike:
     """
 
     downsampled_image = downsample_axis(
-        downsample_axis(downsample_axis(image, level, 0), level, 1), level, 2
+        downsample_axis(downsample_axis(image, level[0], 0), level[1], 1), level[2], 2
     )
 
     return downsampled_image
@@ -230,170 +221,6 @@ def downsample_axis(
                         downsampled_image[z, y, x] = sum_value / count
 
     return downsampled_image
-
-
-def next_multiple_of_32(x: int) -> int:
-    """Calculate next multiple of 32 for the given integer.
-
-    Parameters
-    ----------
-    x: int
-        value to check.
-
-    Returns
-    -------
-    next_32_x: int
-        next multiple of 32 above x.
-    """
-
-    next_32_x = int(np.ceil((x + 31) / 32)) * 32
-
-    return next_32_x
-
-
-def pad_z(image: ArrayLike) -> Tuple[ArrayLike, int, int]:
-    """Pad z-axis of 3D array by 32 (zyx order).
-
-    Parameters
-    ----------
-    image: ArrayLike
-        3D image to pad.
-
-
-    Returns
-    -------
-    padded_image: ArrayLike
-        padded 3D image
-    pad_z_before: int
-        amount of padding at beginning
-    pad_z_after: int
-        amount of padding at end
-    """
-
-    z, y, x = image.shape
-
-    new_z = next_multiple_of_32(z)
-    pad_z = new_z - z
-
-    # Distribute padding evenly on both sides
-    pad_z_before = pad_z // 2
-    pad_z_after = pad_z - pad_z_before
-
-    # Padding configuration for numpy.pad
-    pad_width = ((pad_z_before, pad_z_after), (0, 0), (0, 0))
-
-    padded_image = np.pad(image, pad_width, mode="reflect")
-
-    return padded_image, pad_z_before, pad_z_after
-
-
-def remove_padding_z(
-    padded_image: ArrayLike, 
-    pad_z_before: int, 
-    pad_z_after: int
-) -> ArrayLike:
-    """Removing z-axis padding of 3D array (zyx order).
-
-    Parameters
-    ----------
-    padded_image: ArrayLike
-        padded 3D image
-    pad_z_before: int
-        amount of padding at beginning
-    pad_z_after: int
-        amount of padding at end
-
-
-    Returns
-    -------
-    image: ArrayLike
-        unpadded 3D image
-    """
-
-    image = padded_image[pad_z_before:-pad_z_after, :]
-
-    return image
-
-
-def chunked_cudadecon(
-    image: ArrayLike,
-    psf: ArrayLike,
-    image_voxel_zyx_um: Sequence[float],
-    psf_voxel_zyx_um: Sequence[float],
-    wavelength_um: float,
-    na: float,
-    ri: float,
-    n_iters: int = 10,
-    background: float = 100.0,
-) -> ArrayLike:
-    """Chunked and padded GPU deconvolution using pycudadecon.
-
-    Parameters
-    ----------
-    image: ArrayLike
-        3D image to deconvolve
-    psf: ArrayLike
-        3D psf
-    image_voxel_zyx_um: Sequence[float]
-        image voxel spacing in microns
-    psf_voxel_zyx_um: Sequence[float]
-        psf voxel spacing in microns
-    wavelength_um: float
-        emission wavelength in microns
-    na: float
-        numerical aperture
-    ri: float
-        immersion media refractive index
-    n_iters: int
-        number of deconvolution iterations
-    background: float
-        background level to subtract
-
-    Returns
-    -------
-    image_decon: ArrayLike
-        deconvolved image
-
-    """
-    original_print = builtins.print
-
-    image_padded, pad_z_before, pad_z_after = pad_z(image)
-
-    image_decon_padded = np.zeros_like(image_padded)
-
-    slices = Slicer(
-        image_padded,
-        crop_size=(image_padded.shape[0], 1024, 1024),
-        overlap=(0, 32, 32),
-        batch_size=1,
-        pad=True,
-    )
-
-    for crop, source, destination in tqdm(slices, desc="sclices"):
-        builtins.print= no_op
-        image_decon_padded[destination] = decon(
-            images=crop,
-            psf=psf,
-            dzpsf=float(psf_voxel_zyx_um[0]),
-            dxpsf=float(psf_voxel_zyx_um[1]),
-            dzdata=float(image_voxel_zyx_um[0]),
-            dxdata=float(image_voxel_zyx_um[1]),
-            wavelength=int(wavelength_um * 1000),
-            na=float(na),
-            nimm=float(ri),
-            n_iters=int(n_iters),
-            cleanup_otf=True,
-            napodize=15,
-            background=float(background),
-        )[source]
-        builtins.print = original_print
-
-    image_decon = remove_padding_z(image_decon_padded, pad_z_before, pad_z_after)
-
-    del image_padded, image_decon_padded
-    gc.collect()
-
-    return image_decon
 
 def no_op(*args, **kwargs):
     """Function to monkey patch print to suppress output.

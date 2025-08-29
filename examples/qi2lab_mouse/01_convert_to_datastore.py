@@ -1,5 +1,5 @@
 """
-Convert raw qi2lab WF smFISH data to qi2labdatastore.
+Convert raw qi2lab WF MERFISH data to qi2labdatastore.
 
 This is an example on how to convert a qi2lab experiment to the datastore
 object that the qi2lab "merfish3d-analysis" package uses. Most of the
@@ -9,16 +9,17 @@ extract the correct parameters.
 
 Required user parameters for system dependent variables are at end of script.
 
-Shepherd 2024/02 - add flatfield shading correction
 Shepherd 2024/12 - added more NDTIFF metadata extraction for camera and binning.
 Shepherd 2024/12 - refactor
 Shepherd 2024/11 - rework script to accept parameters.
 Shepherd 2024/08 - rework script to utilize qi2labdatastore object.
 """
-
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter("ignore", category=FutureWarning)
+import multiprocessing as mp
+mp.set_start_method('spawn', force=True)
+
 from merfish3danalysis.qi2labDataStore import qi2labDataStore
 from pathlib import Path
 import numpy as np
@@ -32,9 +33,6 @@ from itertools import compress
 from typing import Optional
 import gc
 import builtins
-import multiprocessing as mp
-
-mp.set_start_method('spawn', force=True)
 
 def convert_data(
     root_path: Path,
@@ -74,7 +72,7 @@ def convert_data(
         imaging round, in channel order. Default of `None` assumes
         the file is in the root_path.
     """
-    
+
     # load codebook
     # --------------
     if codebook_path is None:
@@ -492,7 +490,6 @@ def convert_data(
                 tile=tile_idx,
                 round=round_idx,
                 return_future=False)
-            print(tile_idx, round_idx)
             data_camera_corrected = (data_camera_corrected.astype(np.float32) / fidicual_illumination).clip(0,2**16-1).astype(np.uint16)
             datastore.save_local_corrected_image(
                 data_camera_corrected,
@@ -504,7 +501,7 @@ def convert_data(
                 round=round_idx,
             )
     
-    for bit_id in tqdm(datastore.bit_ids, desc="bit"):
+    for bit_id in tqdm(datastore.bit_ids, desc="bit", leave=True):
         data_camera_corrected = []
 
         # calculate fiducial correction
@@ -552,16 +549,15 @@ def convert_data(
     datastore.datastore_state = datastore_state
 
 if __name__ == "__main__":
-    root_path = Path(r"/data/MERFISH/20250625_bartelle_merfish_LC7d_p100")
+    root_path = Path(r"/mnt/server2/20250702_dual_instrument_WF_MERFISH/")
     baysor_binary_path = Path(
-        r"/home/momo/Repos/Baysor/bin/baysor/bin/./baysor"
+        r"/home/qi2lab/Documents/github/Baysor/bin/baysor/bin/./baysor"
     )
     baysor_options_path = Path(
-        r"/home/momo/Repos/merfish-env/merfish3d-analysis/examples/bioprotean_mouse/bioprotean_mouse.toml"
+        r"/home/qi2lab/Documents/github/merfish3d-analysis/examples/qi2lab_mouse/qi2lab_mouse.toml"
     )
     julia_threads = 20
 
-    # hot_pixel_image_path = Path(r"/data/smFISH/hot_pixel_image.tif")
     hot_pixel_image_path = None
 
     convert_data(

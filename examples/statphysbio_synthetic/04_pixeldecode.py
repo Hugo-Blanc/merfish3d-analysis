@@ -56,10 +56,11 @@ def decode_pixels(
     # decoder.decode_one_tile(
     #     tile_idx = 0,
     #     gpu_id=0,
-    #     display_results=True,
+    #     display_results=False,
     #     magnitude_threshold=magnitude_threshold,
     #     minimum_pixels=minimum_pixels_per_RNA,
-    #     ufish_threshold=ufish_threshold
+    #     ufish_threshold=ufish_threshold, 
+    #     use_normalization=False,
     # )
     
     
@@ -91,5 +92,5 @@ def decode_pixels(
     
 
 if __name__ == "__main__":
-    root_path = Path(r"/home/dps/Documents/2025_merfish3d_paper/example_16bit_flat/0.315/sim_acquisition")
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")
     decode_pixels(root_path=root_path)

@@ -135,5 +135,5 @@ def convert_simulation(
     shutil.copy(sim_bitorder_path, sim_acq_bitorder_path)
     
 if __name__ == "__main__":
-    root_path = Path(r"/home/dps/Documents/2025_merfish3d_paper/example_16bit_flat/0.315/")
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example")
     convert_simulation(root_path=root_path)

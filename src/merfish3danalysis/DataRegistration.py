@@ -68,15 +68,16 @@ def _apply_first_polyDT_on_gpu(
 
     stderr_buffer = io.StringIO()
     with contextlib.redirect_stderr(stderr_buffer):
-        ij_success = False
-        while not(ij_success):
-            try:
-                os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
-                ij = imagej.init()
-                ij_success = True
-            except:
-                time.sleep(.5)
-                ij_success = False
+        # ij_success = False
+        # while not(ij_success):
+        #     try:
+        #         os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
+        #         ij = imagej.init()
+        #         ij_success = True
+        #     except:
+        #         time.sleep(.5)
+        #         ij_success = False
+        ij=None
         ref_image_decon = chunked_rlgc(
             image=raw0,
             psf=dr._psfs[0, :],
@@ -87,6 +88,8 @@ def _apply_first_polyDT_on_gpu(
         )
         del ij
         gc.collect()
+
+        # ref_image_decon = raw0.copy()
 
     dr._datastore.save_local_registered_image(
         ref_image_decon,
@@ -138,15 +141,16 @@ def _apply_polyDT_on_gpu(
     stderr_buffer = io.StringIO()
     with contextlib.redirect_stderr(stderr_buffer):
 
-        ij_success = False
-        while not(ij_success):
-            try:
-                os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
-                ij = imagej.init()
-                ij_success = True
-            except:
-                time.sleep(.5)
-                ij_success = False
+        # ij_success = False
+        # while not(ij_success):
+        #     try:
+        #         os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
+        #         ij = imagej.init()
+        #         ij_success = True
+        #     except:
+        #         time.sleep(.5)
+        #         ij_success = False
+        ij=None
         for r_idx, round_id in enumerate(round_list):
 
             test =  dr._datastore.load_local_registered_image(
@@ -282,7 +286,7 @@ def _apply_polyDT_on_gpu(
                 xyz_shift = np.asarray(lowres_xyz_shift,dtype=np.float32)
                 xyz_shift_float = [round(float(v),1) for v in lowres_xyz_shift]
 
-                #print(time_stamp(), f"GPU {gpu_id}: processed tile id: {dr._tile_id}; round id: {round_id}; rigid xyz offset: {xyz_shift_float}.")
+                # print(time_stamp(), f"GPU {gpu_id}: processed tile id: {dr._tile_id}; round id: {round_id}; rigid xyz offset: {xyz_shift_float}.")
                 
                 initial_xyz_transform = sitk.TranslationTransform(3, xyz_shift_float)
                 warped_mov_image_decon_float = apply_transform(
@@ -773,10 +777,6 @@ class DataRegistration:
         # 2) Grab all rounds IDs after round 0 and split into `num_gpus` chunks
         all_rounds = list(self._round_ids[1:])
         chunk_size = (len(all_rounds) + self._num_gpus - 1) // self._num_gpus  # ceiling division
-
-
-
-
 
         # 3) Launch one process per GPU (only as many as needed)
         processes = []

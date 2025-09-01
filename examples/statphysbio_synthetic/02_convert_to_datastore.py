@@ -356,15 +356,10 @@ def convert_data(
     datastore.datastore_state = datastore_state
 
 if __name__ == "__main__":
-    root_path = Path(r"/home/dps/Documents/2025_merfish3d_paper/example_16bit_flat/0.315/sim_acquisition")
-    baysor_binary_path = Path(
-        r"/home/qi2lab/Documents/github/Baysor/bin/baysor/bin/./baysor"
-    )
-    baysor_options_path = Path(
-        r"/home/qi2lab/Documents/github/merfish3d-analysis/examples/qi2lab_mouse/qi2lab_mouse.toml"
-    )
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")
+    baysor_binary_path = None
+    baysor_options_path = None
     julia_threads = 20
-
     hot_pixel_image_path = None
 
     convert_data(

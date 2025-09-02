@@ -356,7 +356,7 @@ def convert_data(
     datastore.datastore_state = datastore_state
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/d/EQUIPEX/Data/2025012025_statphysbio_simulation/fixed/sim_acquisition")
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")
     baysor_binary_path = None
     baysor_options_path = None
     julia_threads = 20

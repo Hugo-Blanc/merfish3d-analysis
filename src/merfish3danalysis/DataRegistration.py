@@ -68,15 +68,16 @@ def _apply_first_polyDT_on_gpu(
 
     stderr_buffer = io.StringIO()
     with contextlib.redirect_stderr(stderr_buffer):
-        ij_success = False
-        while not(ij_success):
-            try:
-                os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
-                ij = imagej.init()
-                ij_success = True
-            except:
-                time.sleep(.5)
-                ij_success = False
+         # ij_success = False
+        # while not(ij_success):
+        #     try:
+        #         os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
+        #         ij = imagej.init()
+        #         ij_success = True
+        #     except:
+        #         time.sleep(.5)
+        #         ij_success = False
+        ij=None
         ref_image_decon = chunked_rlgc(
             image=raw0,
             psf=dr._psfs[0, :],
@@ -138,15 +139,16 @@ def _apply_polyDT_on_gpu(
     stderr_buffer = io.StringIO()
     with contextlib.redirect_stderr(stderr_buffer):
 
-        ij_success = False
-        while not(ij_success):
-            try:
-                os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
-                ij = imagej.init()
-                ij_success = True
-            except:
-                time.sleep(.5)
-                ij_success = False
+        # ij_success = False
+        # while not(ij_success):
+        #     try:
+        #         os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
+        #         ij = imagej.init()
+        #         ij_success = True
+        #     except:
+        #         time.sleep(.5)
+        #         ij_success = False
+        ij=None
         for r_idx, round_id in enumerate(round_list):
 
             test =  dr._datastore.load_local_registered_image(

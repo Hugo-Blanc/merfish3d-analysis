@@ -35,6 +35,9 @@ def local_register_data(root_path: Path):
         save_all_polyDT_registered=False
     )
 
+    # Temp : don't use the imagej part of rlgc
+    registration_factory._bkd_subtract_polyDT=False
+
     # run local registration across rounds
     registration_factory.register_all_tiles()
 
@@ -135,6 +138,6 @@ def global_register_data(
     datastore.datastore_state = datastore_state
     
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/d/EQUIPEX/Data/2025012025_statphysbio_simulation/fixed/sim_acquisition")
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")
     local_register_data(root_path)
     global_register_data(root_path,create_max_proj_tiff=True)

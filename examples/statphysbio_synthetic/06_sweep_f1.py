@@ -193,10 +193,10 @@ def decode_pixels(
 def sweep_decode_params(
     root_path: Path,
     gt_path: Path,
-    ufish_threshold_range: tuple[float] = (0.05, 0.35),
+    ufish_threshold_range: tuple[float] = (0.1, 0.5),
     ufish_threshold_step: float = 0.05,
-    mag_threshold_range: tuple[float] = (1.0,2.05),
-    mag_threshold_step: float = 0.05,
+    mag_threshold_range: tuple[float] = (0.7,2),
+    mag_threshold_step: float = 0.1,
 ):
     """Sweep through decoding parameters and calculate F1 scores.
     

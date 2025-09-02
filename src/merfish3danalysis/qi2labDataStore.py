@@ -941,10 +941,10 @@ class qi2labDataStore:
         self._polyDT_root_path.mkdir()
         self._readouts_root_path = self._datastore_path / Path(r"readouts")
         self._readouts_root_path.mkdir()
-        self._ufish_localizations_root_path = self._datastore_path / Path(
-            r"ufish_localizations"
+        self._spotiflow_localizations_root_path = self._datastore_path / Path(
+            r"spotiflow_localizations"
         )
-        self._ufish_localizations_root_path.mkdir()
+        self._spotiflow_localizations_root_path.mkdir()
         self._decoded_root_path = self._datastore_path / Path(r"decoded")
         self._decoded_root_path.mkdir()
         self._fused_root_path = self._datastore_path / Path(r"fused")
@@ -1248,8 +1248,8 @@ class qi2labDataStore:
         self._calibrations_zarr_path = self._datastore_path / Path(r"calibrations.zarr")
         self._polyDT_root_path = self._datastore_path / Path(r"polyDT")
         self._readouts_root_path = self._datastore_path / Path(r"readouts")
-        self._ufish_localizations_root_path = self._datastore_path / Path(
-            r"ufish_localizations"
+        self._spotiflow_localizations_root_path = self._datastore_path / Path(
+            r"spotiflow_localizations"
         )
         self._decoded_root_path = self._datastore_path / Path(r"decoded")
         self._fused_root_path = self._datastore_path / Path(r"fused")
@@ -1535,7 +1535,7 @@ class qi2labDataStore:
                     self._readouts_root_path
                     / Path(tile_id)
                     / Path(bit_id + ".zarr")
-                    / Path("registered_ufish_data")
+                    / Path("registered_spotiflow_data")
                 )
 
                 try:
@@ -1545,17 +1545,17 @@ class qi2labDataStore:
                     )
                 except (IOError, OSError, ZarrError):
                     print(tile_id, round_id)
-                    print("Registered ufish prediction missing.")
+                    print("Registered spotiflow prediction missing.")
 
             for tile_id, bit_id in product(self._tile_ids, self._bit_ids):
-                current_ufish_path = (
-                    self._ufish_localizations_root_path
+                current_spotiflow_path = (
+                    self._spotiflow_localizations_root_path
                     / Path(tile_id)
                     / Path(bit_id + ".parquet")
                 )
-                if not (current_ufish_path.exists()):
+                if not (current_spotiflow_path.exists()):
                     raise FileNotFoundError(
-                        tile_id + " " + bit_id + " ufish localization missing"
+                        tile_id + " " + bit_id + " spotiflow localization missing"
                     )
 
         # check and validate global registered data
@@ -2497,18 +2497,27 @@ class qi2labDataStore:
             print("Corrected image not found.")
             return None
 
-        try:
-            spec = self._zarrv2_spec.copy()
-            spec["metadata"]["dtype"] = "<u2"
-            corrected_image = self._load_from_zarr_array(
-                self._get_kvstore_key(current_local_zarr_path),
-                spec,
-                return_future,
-            )
-            return corrected_image
-        except (IOError, OSError, ZarrError):
-            print("Error loading corrected image.")
-            return None
+        # try:
+        #     spec = self._zarrv2_spec.copy()
+        #     spec["metadata"]["dtype"] = "<u2"
+        #     corrected_image = self._load_from_zarr_array(
+        #         self._get_kvstore_key(current_local_zarr_path),
+        #         spec,
+        #         return_future,
+        #     )
+        #     return corrected_image
+        # except (IOError, OSError, ZarrError):
+        #     print("Error loading corrected image.")
+        #     return None
+
+        spec = self._zarrv2_spec.copy()
+        spec["metadata"]["dtype"] = "<u2"
+        corrected_image = self._load_from_zarr_array(
+            self._get_kvstore_key(current_local_zarr_path),
+            spec,
+            return_future,
+        )
+        return corrected_image
 
     def save_local_corrected_image(
         self,
@@ -3217,13 +3226,13 @@ class qi2labDataStore:
             print("Error saving corrected image.")
             return None
 
-    def load_local_ufish_image(
+    def load_local_spotiflow_image(
         self,
         tile: Union[int, str],
         bit: Union[int, str],
         return_future: Optional[bool] = True,
     ) -> Optional[ArrayLike]:
-        """Load readout bit U-FISH prediction image for one tile.
+        """Load readout bit spotiflow prediction image for one tile.
         
         Parameters
         ----------
@@ -3235,7 +3244,7 @@ class qi2labDataStore:
         
         Returns
         -------
-        registered_ufish_image : Optional[ArrayLike]
+        registered_spotiflow_image : Optional[ArrayLike]
             U-FISH prediction image for one tile.
         """
 
@@ -3275,7 +3284,7 @@ class qi2labDataStore:
             self._readouts_root_path
             / Path(tile_id)
             / Path(bit_id + ".zarr")
-            / Path("registered_ufish_data")
+            / Path("registered_spotiflow_data")
         )
 
         if not Path(current_local_zarr_path).exists():
@@ -3285,20 +3294,20 @@ class qi2labDataStore:
         try:
             spec = self._zarrv2_spec.copy()
             spec["metadata"]["dtype"] = "<f4"
-            registered_ufish_image = self._load_from_zarr_array(
+            registered_spotiflow_image = self._load_from_zarr_array(
                 self._get_kvstore_key(current_local_zarr_path),
                 spec,
                 return_future,
             )
-            return registered_ufish_image
+            return registered_spotiflow_image
         except (IOError, OSError, ZarrError) as e:
             print(e)
-            print("Error loading U-FISH image.")
+            print("Error loading spotiflow image.")
             return None
 
-    def save_local_ufish_image(
+    def save_local_spotiflow_image(
         self,
-        ufish_image: ArrayLike,
+        spotiflow_image: ArrayLike,
         tile: Union[int, str],
         bit: Union[int, str],
         return_future: Optional[bool] = False,
@@ -3307,7 +3316,7 @@ class qi2labDataStore:
         
         Parameters
         ----------
-        ufish_image : ArrayLike
+        spotiflow_image : ArrayLike
             U-FISH prediction image.
         tile : Union[int, str]
             Tile index or tile id.
@@ -3353,12 +3362,12 @@ class qi2labDataStore:
                 self._readouts_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
-                / Path("registered_ufish_data")
+                / Path("registered_spotiflow_data")
             )
 
         try:
             self._save_to_zarr_array(
-                ufish_image,
+                spotiflow_image,
                 self._get_kvstore_key(current_local_zarr_path),
                 self._zarrv2_spec.copy(),
                 return_future,
@@ -3368,7 +3377,7 @@ class qi2labDataStore:
             print("Error saving U-Fish image.")
             return None
 
-    def load_local_ufish_spots(
+    def load_local_spotiflow_spots(
         self,
         tile: Union[int, str],
         bit: Union[int, str],
@@ -3384,7 +3393,7 @@ class qi2labDataStore:
         
         Returns
         -------
-        ufish_localizations : Optional[pd.DataFrame]
+        spotiflow_localizations : Optional[pd.DataFrame]
             U-FISH localizations and features for one tile.
         """
 
@@ -3420,22 +3429,22 @@ class qi2labDataStore:
             print("'bit' must be integer index or string identifier")
             return None
 
-        current_ufish_localizations_path = (
-            self._ufish_localizations_root_path
+        current_spotiflow_localizations_path = (
+            self._spotiflow_localizations_root_path
             / Path(tile_id)
             / Path(bit_id + ".parquet")
         )
 
-        if not current_ufish_localizations_path.exists():
-            print("U-FISH localizations not found.")
+        if not current_spotiflow_localizations_path.exists():
+            print("spotiflow localizations not found.")
             return None
         else:
-            ufish_localizations = self._load_from_parquet(
-                current_ufish_localizations_path
+            spotiflow_localizations = self._load_from_parquet(
+                current_spotiflow_localizations_path
             )
-            return ufish_localizations
+            return spotiflow_localizations
 
-    def save_local_ufish_spots(
+    def save_local_spotiflow_spots(
         self,
         spot_df: pd.DataFrame,
         tile: Union[int, str],
@@ -3485,20 +3494,20 @@ class qi2labDataStore:
             print("'bit' must be integer index or string identifier")
             return None
 
-        if not (self._ufish_localizations_root_path / Path(tile_id)).exists():
-            (self._ufish_localizations_root_path / Path(tile_id)).mkdir()
+        if not (self._spotiflow_localizations_root_path / Path(tile_id)).exists():
+            (self._spotiflow_localizations_root_path / Path(tile_id)).mkdir()
 
-        current_ufish_localizations_path = (
-            self._ufish_localizations_root_path
+        current_spotiflow_localizations_path = (
+            self._spotiflow_localizations_root_path
             / Path(tile_id)
             / Path(bit_id + ".parquet")
         )
 
         try:
-            self._save_to_parquet(spot_df, current_ufish_localizations_path)
+            self._save_to_parquet(spot_df, current_spotiflow_localizations_path)
         except (IOError, OSError) as e:
             print(e)
-            print("Error saving U-FISH localizations.")
+            print("Error saving spotiflow localizations.")
             return None
 
     def load_global_coord_xforms_um(

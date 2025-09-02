@@ -148,7 +148,7 @@ def calculate_F1(
 def decode_pixels(
     root_path: Path, 
     mag_threshold: float, 
-    ufish_threshold: float, 
+    spotiflow_threshold: float, 
 ):
     """Run pixel decoding with the given parameters.
     
@@ -158,8 +158,8 @@ def decode_pixels(
         The root path of the experiment.
     mag_threshold : float
         The magnitude threshold
-    ufish_threshold : float
-        The ufish threshold.
+    spotiflow_threshold : float
+        The spotiflow threshold.
     """
 
     datastore_path = root_path / Path(r"qi2labdatastore")
@@ -178,7 +178,7 @@ def decode_pixels(
         n_random_tiles=1,
         n_iterations=1,
         minimum_pixels=9,
-        ufish_threshold=ufish_threshold,
+        spotiflow_threshold=spotiflow_threshold,
         magnitude_threshold=mag_threshold
     )
 
@@ -187,15 +187,15 @@ def decode_pixels(
         prep_for_baysor=False,
         minimum_pixels=9,
         magnitude_threshold=mag_threshold,
-        ufish_threshold=ufish_threshold
+        spotiflow_threshold=spotiflow_threshold
     )
 
 def sweep_decode_params(
     root_path: Path,
     gt_path: Path,
-    ufish_threshold_range: tuple[float] = (0.05, 0.35),
-    ufish_threshold_step: float = 0.05,
-    mag_threshold_range: tuple[float] = (1.0,2.05),
+    spotiflow_threshold_range: tuple[float] = (0.1, 0.4),
+    spotiflow_threshold_step: float = 0.05,
+    mag_threshold_range: tuple[float] = (0.7,2.0),
     mag_threshold_step: float = 0.1,
 ):
     """Sweep through decoding parameters and calculate F1 scores.
@@ -206,10 +206,10 @@ def sweep_decode_params(
         The root path of the experiment.
     gt_path : Path
         The path to the ground truth spots.
-    ufish_threshold_range : tuple, default [0.05,0.3]
-        The range of ufish thresholds to sweep through.
-    ufish_threshold_step : float, default .05
-        The step size for the ufish threshold sweep
+    spotiflow_threshold_range : tuple, default [0.05,0.3]
+        The range of spotiflow thresholds to sweep through.
+    spotiflow_threshold_step : float, default .05
+        The step size for the spotiflow threshold sweep
     mag_threshold_range : tuple, default [1.0,2.0]
         The range of minimum magnitude threshold to sweep through.
     mag_threshold_step : float, default 0.05
@@ -223,10 +223,10 @@ def sweep_decode_params(
         dtype=np.float32
     ).tolist()
 
-    ufish_values = np.arange(
-        ufish_threshold_range[0], 
-        ufish_threshold_range[1], 
-        ufish_threshold_step, 
+    spotiflow_values = np.arange(
+        spotiflow_threshold_range[0], 
+        spotiflow_threshold_range[1], 
+        spotiflow_threshold_step, 
         dtype=np.float32
     ).tolist()
 
@@ -234,21 +234,21 @@ def sweep_decode_params(
     save_path = root_path / "decode_params_results.json"
 
 
-    for ufish in ufish_values:
+    for spotiflow in spotiflow_values:
         for mag in mag_values:
             params = {
                 "fdr": .05,
                 "min_pixels": 9,
                 "mag_thresh": round(mag,2),
-                "ufish_threshold": round(ufish, 2)
+                "spotiflow_threshold": round(spotiflow, 2)
             }
 
             try:
-                print(time_stamp(), f"ufish threshold: {round(ufish,2)}; magnitude threshold: {round(mag,2)}")
+                print(time_stamp(), f"spotiflow threshold: {round(spotiflow,2)}; magnitude threshold: {round(mag,2)}")
                 decode_pixels(
                     root_path=root_path,
                     mag_threshold=round(mag,2),
-                    ufish_threshold=round(ufish,2),
+                    spotiflow_threshold=round(spotiflow,2),
                 )
 
                 result = calculate_F1(
@@ -260,6 +260,8 @@ def sweep_decode_params(
                 result = {"error": str(e)}
 
             results[str(params)] = result
+            
+            print(result)
 
             with save_path.open(mode='w', encoding='utf-8') as file:
                 json.dump(results, file, indent=2)

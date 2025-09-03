@@ -91,5 +91,5 @@ def decode_pixels(
     
 
 if __name__ == "__main__":
-    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")    
+    root_path = Path(r"/home/hblanc01/Data/sparse_16bit_example/sim_acquisition")    
     decode_pixels(root_path=root_path)

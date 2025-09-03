@@ -138,6 +138,6 @@ def global_register_data(
     datastore.datastore_state = datastore_state
     
 if __name__ == "__main__":
-    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")
+    root_path = Path(r"/home/hblanc01/Data/sparse_16bit_example/sim_acquisition")
     local_register_data(root_path)
     global_register_data(root_path,create_max_proj_tiff=False)

@@ -480,10 +480,10 @@ def _apply_bits_on_gpu(
             data_reg = data_reg.clip(0,2**16-1).astype(np.uint16)
 
             # Spotiflow
-            spotiflow = Spotiflow.from_pretrained("smfish_3d", map_location='cuda')
+            spotiflow = Spotiflow.from_folder("/home/hblanc01/.spotiflow/models/synth_3d_grid_1", map_location='cuda')
             spot_loc, spotiflow_details  = spotiflow.predict(data_reg, exclude_border=True, verbose=True)
             spotiflow_loc = pd.DataFrame(list(zip(list(spot_loc[:, 0]), list(spot_loc[:, 1]), list(spot_loc[:, 2]))), columns=["z", "y", "x"])
-            spotiflow_heatmap = rescale(spotiflow_details.heatmap, scale=2)
+            spotiflow_heatmap = spotiflow_details.heatmap
             del spotiflow, spot_loc
             gc.collect()
 
@@ -508,7 +508,7 @@ def _apply_bits_on_gpu(
 
             # Output spotiflow probability map is downsampled by 2 
             spotiflow_loc["sum_prob_pixels"] = spotiflow_loc.apply(
-                sum_pixels_in_roi, axis=1, image=spotiflow_heatmap, roi_dims=(roi_z//2, roi_y//2, roi_x//2)
+                sum_pixels_in_roi, axis=1, image=spotiflow_heatmap, roi_dims=(roi_z, roi_y, roi_x)
             )
             spotiflow_loc["sum_decon_pixels"] = spotiflow_loc.apply(
                 sum_pixels_in_roi, axis=1, image=data_reg, roi_dims=(roi_z, roi_y, roi_x)

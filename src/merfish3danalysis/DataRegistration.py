@@ -395,7 +395,7 @@ def _apply_bits_on_gpu(
     from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
     from merfish3danalysis.utils.registration import apply_transform
     from skimage.transform import rescale
-
+    from skimage.exposure import rescale_intensity
 
     for bit_id in bit_list:
 
@@ -481,9 +481,10 @@ def _apply_bits_on_gpu(
 
             # Spotiflow
             spotiflow = Spotiflow.from_folder("/home/hblanc01/.spotiflow/models/synth_3d_grid_1", map_location='cuda')
-            spot_loc, spotiflow_details  = spotiflow.predict(data_reg, exclude_border=True, verbose=True)
+            spot_loc, spotiflow_details  = spotiflow.predict(data_reg, subpix=True, exclude_border=True, verbose=True)
             spotiflow_loc = pd.DataFrame(list(zip(list(spot_loc[:, 0]), list(spot_loc[:, 1]), list(spot_loc[:, 2]))), columns=["z", "y", "x"])
-            spotiflow_heatmap = spotiflow_details.heatmap
+            spotiflow_heatmap = rescale_intensity(spotiflow_details.flow[...,0], in_range=(-1,1), out_range=(0,1))
+            # spotiflow_heatmap = spotiflow_details.heatmap
             del spotiflow, spot_loc
             gc.collect()
 

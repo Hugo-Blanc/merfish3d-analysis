@@ -193,9 +193,9 @@ def decode_pixels(
 def sweep_decode_params(
     root_path: Path,
     gt_path: Path,
-    ufish_threshold_range: tuple[float] = (0.1, 0.4),
+    ufish_threshold_range: tuple[float] = (0.1, 0.6),
     ufish_threshold_step: float = 0.05,
-    mag_threshold_range: tuple[float] = (0.7,2),
+    mag_threshold_range: tuple[float] = (0.5,2.0),
     mag_threshold_step: float = 0.1,
 ):
     """Sweep through decoding parameters and calculate F1 scores.
@@ -267,6 +267,6 @@ def sweep_decode_params(
                 json.dump(results, file, indent=2)
 
 if __name__ == "__main__":
-    root_path = Path(r"/home/hblanc01/Data/sparse_16bit_example/sim_acquisition")
-    gt_path = Path(r"/home/hblanc01/Data/sparse_16bit_example/GT_spots.csv")
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition_ufish")
+    gt_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/GT_spots.csv")
     sweep_decode_params(root_path=root_path, gt_path=gt_path)

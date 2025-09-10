@@ -29,11 +29,9 @@ def local_register_data(root_path: Path):
     # initialize registration class
     registration_factory = DataRegistration(
         datastore=datastore, 
-        decon_polyDT=False,
-        perform_optical_flow=True, 
+        perform_optical_flow=False, 
         overwrite_registered=True,
         save_all_polyDT_registered=True, 
-        crop_yx_decon = 512,
     )
     # Temp : don't use the imagej part of rlgc
     registration_factory._bkd_subtract_polyDT=False
@@ -86,7 +84,7 @@ def global_register_data(
 
         voxel_zyx_um = datastore.voxel_size_zyx_um
 
-        scale = {"z": voxel_zyx_um[0], "y": voxel_zyx_um[1], "x": voxel_zyx_um[2]}
+        scale = {"z": voxel_zyx_um[0], "y": voxel_zyx_um[1], "x": voxel_zyx_um[1]}
 
         tile_position_zyx_um, affine_zyx_px = datastore.load_local_stage_position_zyx_um(
             tile_id, round_id

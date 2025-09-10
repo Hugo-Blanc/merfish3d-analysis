@@ -58,7 +58,6 @@ def _apply_first_polyDT_on_gpu(
     import contextlib
     import os
     cp.cuda.Device(0).use()
-    from merfish3danalysis.utils.rlgc import chunked_rlgc
 
 
     raw0 = dr._datastore.load_local_corrected_image(
@@ -67,40 +66,15 @@ def _apply_first_polyDT_on_gpu(
         return_future=False
     )
 
-    stderr_buffer = io.StringIO()
-    with contextlib.redirect_stderr(stderr_buffer):
-        # ij_success = False
-        # while not(ij_success):
-        #     try:
-        #         os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
-        #         ij = imagej.init()
-        #         ij_success = True
-        #     except:
-        #         time.sleep(.5)
-        #         ij_success = False
-        ij=None
-        ref_image_decon = chunked_rlgc(
-            image=raw0,
-            psf=dr._psfs[0, :],
-            gpu_id=0,
-            crop_yx = dr._crop_yx_decon,
-            bkd = dr._bkd_subtract_polyDT,
-            ij = ij
-        )
-        del ij
-        gc.collect()
-
-        # ref_image_decon = raw0.copy()
-
     dr._datastore.save_local_registered_image(
-        ref_image_decon,
+        raw0,
         tile=dr._tile_id,
         deconvolution=True,
         round=dr._round_ids[0]
     )
     print(time_stamp(), f"GPU {gpu_id}: finished polyDT tile id: {dr._tile_id}; round id: round001.")
 
-    del raw0, ref_image_decon
+    del raw0
     gc.collect()
     cp.get_default_memory_pool().free_all_blocks()
     return True
@@ -111,7 +85,7 @@ def _apply_polyDT_on_gpu(
     gpu_id: int = 0
 ):
     """
-    Run the “deconvolve→rigid+optical‐flow” loop for a subset of polyDT rounds on a single GPU.
+    Run the “rigid+optical‐flow” loop for a subset of polyDT rounds on a single GPU.
     
     Parameters
     ----------
@@ -165,33 +139,12 @@ def _apply_polyDT_on_gpu(
                 has_reg_decon_data = True
 
             if not (has_reg_decon_data) or dr._overwrite_registered:
-                if dr._decon_polyDT:
-                    ref_image_decon_float = dr._datastore.load_local_registered_image(
-                        tile=dr._tile_id,
-                        round=dr._round_ids[0],
-                        return_future=False
-                    ).astype(np.float32)
-                else:
-                    ref_image = dr._datastore.load_local_corrected_image(
-                        tile=dr._tile_id,
-                        round=dr._round_ids[0],
-                        return_future=False
-                    )
-                    if dr._bkd_subtract_polyDT:
-                        imp_array = ij.py.to_imageplus(ref_image)
-                        imp_array.setStack(imp_array.getStack().duplicate())
-                        imp_array.show()
-                        ij.IJ.run(imp_array,"Subtract Background...", "rolling=200 disable stack")
-                        imp_array.show()
-                        ij.py.sync_image(imp_array)
-                        bkd_output = ij.py.from_java(imp_array.duplicate())
-                        imp_array.close()
-                        ref_image_bkd = np.swapaxes(bkd_output.data.transpose(2,1,0),1,2).clip(0,2**16-1).astype(np.uint16).copy()
-                        ref_image_decon_float = ref_image_bkd.copy().astype(np.float32)
-                        del imp_array, ref_image, bkd_output, ref_image_bkd
-                    else:
-                        ref_image_decon_float = ref_image.copy().astype(np.float32)
-                        del ref_image
+                ref_image_decon_float = dr._datastore.load_local_registered_image(
+                    tile=dr._tile_id,
+                    round=dr._round_ids[0],
+                    return_future=False
+                ).astype(np.float32)
+
 
                 raw = dr._datastore.load_local_corrected_image(
                     tile=dr._tile_id,
@@ -199,52 +152,20 @@ def _apply_polyDT_on_gpu(
                     return_future=False
                 )
 
-                if dr._decon_polyDT:
-                    from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
-                    if dr._datastore.microscope_type == "2D":
-                        imp_array = ij.py.to_imageplus(raw)
-                        imp_array.setStack(imp_array.getStack().duplicate())
-                        imp_array.show()
-                        ij.IJ.run(imp_array,"Subtract Background...", "rolling=200 disable stack")
-                        imp_array.show()
-                        ij.py.sync_image(imp_array)
-                        bkd_output = ij.py.from_java(imp_array.duplicate())
-                        imp_array.close()
-                        raw_bkd = np.swapaxes(bkd_output.data.transpose(2,1,0),1,2).clip(0,2**16-1).astype(np.uint16).copy()
-                        del imp_array, bkd_output, raw
-                        mov_image_decon = np.zeros_like(raw_bkd,dtype=np.float32)
-                        for z_idx in range(raw.shape[0]):
-                            mov_image_decon[z_idx,:] = rlgc_biggs(
-                                image = raw[z_idx,:],
-                                psf = dr._psfs[0,:],
-                                gpu_id = gpu_id,
-                                eager_mode=True
-                            )
-                        mov_image_decon = mov_image_decon.clip(0,2**16-1).astype(np.uint16)
-                    else:
-                        mov_image_decon = chunked_rlgc(
-                            image=raw,
-                            psf=dr._psfs[0, :],
-                            gpu_id=gpu_id,
-                            crop_yx = dr._crop_yx_decon,
-                            bkd = dr._bkd_subtract_polyDT,
-                            ij = ij
-                        )
+                if dr._bkd_subtract_polyDT:
+                    imp_array = ij.py.to_imageplus(raw)
+                    imp_array.setStack(imp_array.getStack().duplicate())
+                    imp_array.show()
+                    ij.IJ.run(imp_array,"Subtract Background...", "rolling=200 disable stack")
+                    imp_array.show()
+                    ij.py.sync_image(imp_array)
+                    bkd_output = ij.py.from_java(imp_array.duplicate())
+                    imp_array.close()
+                    mov_image_decon = np.swapaxes(bkd_output.data.transpose(2,1,0),1,2).clip(0,2**16-1).astype(np.uint16).copy()
+                    del imp_array, raw, bkd_output
                 else:
-                    if dr._bkd_subtract_polyDT:
-                        imp_array = ij.py.to_imageplus(raw)
-                        imp_array.setStack(imp_array.getStack().duplicate())
-                        imp_array.show()
-                        ij.IJ.run(imp_array,"Subtract Background...", "rolling=200 disable stack")
-                        imp_array.show()
-                        ij.py.sync_image(imp_array)
-                        bkd_output = ij.py.from_java(imp_array.duplicate())
-                        imp_array.close()
-                        mov_image_decon = np.swapaxes(bkd_output.data.transpose(2,1,0),1,2).clip(0,2**16-1).astype(np.uint16).copy()
-                        del imp_array, raw, bkd_output
-                    else:
-                        mov_image_decon = raw.copy().astype(np.uint16)
-                        del raw
+                    mov_image_decon = raw.copy().astype(np.uint16)
+                    del raw
 
                 mov_image_decon_float = mov_image_decon.copy().astype(np.float32)
                 del mov_image_decon
@@ -367,7 +288,7 @@ def _apply_bits_on_gpu(
     gpu_id: int = 0
 ):
     """
-    Run the “deconvolve→rigid+optical‐flow→Spotiflow” loop for a subset of bits on a single GPU.
+    Run the “rigid+optical‐flow→Spotiflow” loop for a subset of bits on a single GPU.
     
     Parameters
     ----------
@@ -408,31 +329,9 @@ def _apply_bits_on_gpu(
 
         if (not reg_on_disk) or dr._overwrite_registered:
             # load data
-            corrected_image = dr._datastore.load_local_corrected_image(
+            decon_image = dr._datastore.load_local_corrected_image(
                 tile=dr._tile_id, bit=bit_id, return_future=False
             )
-
-            # deconvolution
-            if dr._decon:
-                if dr._datastore.microscope_type == "2D":
-                    decon_image = np.zeros_like(corrected_image,dtype=np.float32)
-                    for z_idx in range(corrected_image.shape[0]):
-                        decon_image[z_idx,:] = rlgc_biggs(
-                            image = corrected_image[z_idx,:],
-                            psf = dr._psfs[psf_idx,:],
-                            gpu_id = gpu_id,
-                            eager_mode=False
-                        )
-                    decon_image = decon_image.clip(0,2**16-1).astype(np.uint16)
-                else:
-                    decon_image = chunked_rlgc(
-                        image=corrected_image,
-                        psf=dr._psfs[psf_idx, :],
-                        gpu_id = gpu_id,
-                        crop_yx = dr._crop_yx_decon
-                    )
-            else:
-                decon_image = corrected_image.copy()
 
             # apply rigid + (optional) optical‐flow if r_idx > 0
             if r_idx > 0:
@@ -560,7 +459,6 @@ class DataRegistration:
     def __init__(
         self,
         datastore: qi2labDataStore,
-        decon_polyDT: bool = False,
         bkd_subtract_polyDT: bool = True,
         overwrite_registered: bool = False,
         perform_optical_flow: bool = True,
@@ -568,9 +466,7 @@ class DataRegistration:
         num_gpus: int = 1,
         crop_yx_decon: int = 1024
     ):
-    
         self._datastore = datastore
-        self._decon_polyDT = decon_polyDT
         self._tile_ids = self._datastore.tile_ids
         self._round_ids = self._datastore.round_ids
         self._bit_ids = self._datastore.bit_ids
@@ -584,7 +480,6 @@ class DataRegistration:
         self._has_registered_data = None
         self._overwrite_registered = overwrite_registered
         self.save_all_polyDT_registered = save_all_polyDT_registered
-        self._decon = True
         self._original_print = builtins.print
 
     # -----------------------------------
@@ -766,266 +661,37 @@ class DataRegistration:
             has_reg_decon_data = True
             
         if not (has_reg_decon_data) or self._overwrite_registered:
-        #     psf_idx = self._datastore.load_local_psf_idx(self._tile_id,
-        #             round=self._round_ids[0])
-            
-        #     ex_wavelength_um, em_wavelength_um = self._datastore.load_local_wavelengths_um(
-        #         tile=self._tile_id,
-        #         round=self._round_ids[0])
-            
-        #     ref_image_decon = chunked_cudadecon(
-        #         image=np.asarray(self._data_raw[0].result(),dtype=np.uint16),
-        #         psf=self._psfs[psf_idx, :],
-        #         image_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
-        #         psf_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
-        #         wavelength_um=em_wavelength_um,
-        #         na=self._datastore.na,
-        #         ri=self._datastore.ri,
-        #         n_iters=self._decon_iters,
-        #         background=self._decon_background,
-        #     )
-
-        #     self._datastore.save_local_registered_image(
-        #         ref_image_decon,
-        #         tile=self._tile_id,
-        #         deconvolution=True,
-        #         round=self._round_ids[0]
-        #     )
-
-        # for r_idx, round_id in enumerate(tqdm(self._round_ids[1:],desc="rounds")):
-            
-        #     test =  self._datastore.load_local_registered_image(
-        #         tile=self._tile_id,
-        #         round=round_id
-        #     )
-        #     if test is None:
-        #         has_reg_decon_data = False
-        #     else:
-        #         has_reg_decon_data = True
-
-        #     if not (has_reg_decon_data) or self._overwrite_registered:
-        #         try:
-        #             temp = ref_image_decon[0:1,0:1,0:1].astype(np.float32)
-        #             del temp
-        #             gc.collect()
-        #         except FileNotFoundError :
-        #             ref_image_decon = self._datastore.load_local_registered_image(
-        #                 tile=self._tile_id,
-        #                 round=self._round_ids[r_idx],
-        #                 return_future=False
-        #             )
-        #         except UnboundLocalError :
-        #             ref_image_decon = self._datastore.load_local_registered_image(
-        #                 tile=self._tile_id,
-        #                 round=self._round_ids[r_idx],
-        #                 return_future=False
-        #             )
-        #         psf_idx = self._datastore.load_local_psf_idx(self._tile_id,
-        #             round=self._round_ids[r_idx])
-            
-        #         ex_wavelength_um, em_wavelength_um = self._datastore.load_local_wavelengths_um(
-        #             tile=self._tile_id,
-        #             round=self._round_ids[r_idx])
-
-        #         mov_image_decon = chunked_cudadecon(
-        #             image=np.asarray(
-        #                 self._data_raw[r_idx].result(),dtype=np.uint16
-        #             ),
-        #             psf=self._psfs[psf_idx, :],
-        #             image_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
-        #             psf_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
-        #             wavelength_um=em_wavelength_um,
-        #             na=self._datastore.na,
-        #             ri=self._datastore.ri,
-        #             n_iters=self._decon_iters,
-        #             background=self._decon_background,
-        #         )
-
-        #         downsample_factor = 2
-        #         if downsample_factor > 1:
-        #             ref_image_decon_ds = downsample_image_isotropic(
-        #                 ref_image_decon, downsample_factor
-        #             )
-        #             mov_image_decon_ds = downsample_image_isotropic(
-        #                 mov_image_decon, downsample_factor
-        #             )
-        #         else:
-        #             ref_image_decon_ds = ref_image_decon.copy()
-        #             mov_image_decon_ds = mov_image_decon.copy()
-
-        #         _, initial_xy_shift = compute_rigid_transform(
-        #             ref_image_decon_ds,
-        #             mov_image_decon_ds,
-        #             use_mask=True,
-        #             downsample_factor=downsample_factor,
-        #             projection="z",
-        #         )
-
-        #         intial_xy_transform = sitk.TranslationTransform(3, initial_xy_shift)
-
-        #         mov_image_decon = apply_transform(
-        #             ref_image_decon, mov_image_decon, intial_xy_transform
-        #         )
-
-        #         downsample_factor = 2
-        #         if downsample_factor > 1:
-        #             ref_image_decon_ds = downsample_image_isotropic(
-        #                 ref_image_decon, downsample_factor
-        #             )
-        #             mov_image_decon_ds = downsample_image_isotropic(
-        #                 mov_image_decon, downsample_factor
-        #             )
-        #         else:
-        #             ref_image_decon_ds = ref_image_decon.copy()
-        #             mov_image_decon_ds = mov_image_decon.copy()
-
-        #         _, intial_z_shift = compute_rigid_transform(
-        #             ref_image_decon_ds,
-        #             mov_image_decon_ds,
-        #             use_mask=False,
-        #             downsample_factor=downsample_factor,
-        #             projection="search",
-        #         )
-
-        #         intial_z_transform = sitk.TranslationTransform(3, intial_z_shift)
-
-        #         mov_image_decon = apply_transform(
-        #             ref_image_decon, mov_image_decon, intial_z_transform
-        #         )
-
-        #         downsample_factor = 4
-        #         if downsample_factor > 1:
-        #             ref_image_decon_ds = downsample_image_isotropic(
-        #                 ref_image_decon, downsample_factor
-        #             )
-        #             mov_image_decon_ds = downsample_image_isotropic(
-        #                 mov_image_decon, downsample_factor
-        #             )
-        #         else:
-        #             ref_image_decon_ds = ref_image_decon.copy()
-        #             mov_image_decon_ds = mov_image_decon.copy()
-
-        #         _, xyz_shift_4x = compute_rigid_transform(
-        #             ref_image_decon_ds,
-        #             mov_image_decon_ds,
-        #             use_mask=True,
-        #             downsample_factor=downsample_factor,
-        #             projection=None,
-        #         )
-                
-        #         final_xyz_shift = (
-        #             np.asarray(initial_xy_shift)
-        #             + np.asarray(intial_z_shift)
-        #             + np.asarray(xyz_shift_4x)
-        #         )
-        #         # final_xyz_shift = np.asarray(xyz_shift_4x)
-        #         self._datastore.save_local_rigid_xform_xyz_px(
-        #             rigid_xform_xyz_px=final_xyz_shift,
-        #             tile=self._tile_id,
-        #             round=round_id
-        #         )
-
-        #         xyz_transform_4x = sitk.TranslationTransform(3, xyz_shift_4x)
-        #         mov_image_decon = apply_transform(
-        #             ref_image_decon, mov_image_decon, xyz_transform_4x
-        #         )
-                
-        #         if self._perform_optical_flow:
-        #             downsample_factor = 3
-        #             if downsample_factor > 1:
-        #                 ref_image_decon_ds = downsample_image_isotropic(
-        #                     ref_image_decon, downsample_factor
-        #                 )
-        #                 mov_image_decon_ds = downsample_image_isotropic(
-        #                     mov_image_decon, downsample_factor
-        #                 )
-
-        #             of_xform_px = compute_optical_flow(
-        #                 ref_image_decon_ds, 
-        #                 mov_image_decon_ds
-        #             )
-
-        #             self._datastore.save_coord_of_xform_px(
-        #                 of_xform_px=of_xform_px,
-        #                 tile=self._tile_id,
-        #                 downsampling=[
-        #                     float(downsample_factor),
-        #                     float(downsample_factor),
-        #                     float(downsample_factor)],
-        #                 round=round_id
-        #             )
-
-        #             of_xform_sitk = sitk.GetImageFromArray(
-        #                 of_xform_px.transpose(1, 2, 3, 0).astype(np.float64),
-        #                 isVector=True,
-        #             )
-        #             interpolator = sitk.sitkLinear
-        #             identity_transform = sitk.Transform(3, sitk.sitkIdentity)
-        #             optical_flow_sitk = sitk.Resample(
-        #                 of_xform_sitk,
-        #                 sitk.GetImageFromArray(mov_image_decon),
-        #                 identity_transform,
-        #                 interpolator,
-        #                 0,
-        #                 of_xform_sitk.GetPixelID(),
-        #             )
-        #             displacement_field = sitk.DisplacementFieldTransform(
-        #                 optical_flow_sitk
-        #             )
-        #             del optical_flow_sitk, of_xform_px
-        #             gc.collect()
-
-        #             # apply optical flow
-        #             mov_image_sitk = sitk.Resample(
-        #                 sitk.GetImageFromArray(mov_image_decon), 
-        #                 displacement_field
-        #             )
-
-        #             data_registered = sitk.GetArrayFromImage(
-        #                 mov_image_sitk
-        #             ).astype(np.float32)
-        #             data_registered[data_registered < 0.0] = 0
-        #             data_registered = data_registered.astype(np.uint16)
-                    
-        #             del mov_image_sitk, displacement_field
-        #             gc.collect()
-
-        # Test wihou multiprocessing
-        # p_first = mp.Process(target=_apply_first_polyDT_on_gpu, args=(self,0))
-        # p_first.start()
-        # p_first.join()
-
             _apply_first_polyDT_on_gpu(self,0)
 
         all_rounds = list(self._round_ids[1:])
         chunk_size = (len(all_rounds) + self._num_gpus - 1) // self._num_gpus  # ceiling division
 
-            # 3) Launch one process per GPU (only as many as needed)
-            processes = []
-            for gpu_id in range(self._num_gpus):
-                start = gpu_id * chunk_size
-                end = min(start + chunk_size, len(all_rounds))
-                if start >= end:
-                    break  # no more rounds to assign
+        # 3) Launch one process per GPU (only as many as needed)
+        processes = []
+        for gpu_id in range(self._num_gpus):
+            start = gpu_id * chunk_size
+            end = min(start + chunk_size, len(all_rounds))
+            if start >= end:
+                break  # no more rounds to assign
 
-                subset = all_rounds[start:end]
-        
-                old_vis = os.environ.get("CUDA_VISIBLE_DEVICES")
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-                try:
-                    # Inside child, logical device 0 maps to this physical GPU.
-                    p = mp.Process(target=_apply_polyDT_on_gpu, args=(self, subset, 0))
-                    p.start()
-                    processes.append(p)
-                finally:
-                    if old_vis is None:
-                        os.environ.pop("CUDA_VISIBLE_DEVICES", None)
-                    else:
-                        os.environ["CUDA_VISIBLE_DEVICES"] = old_vis
+            subset = all_rounds[start:end]
+    
+            old_vis = os.environ.get("CUDA_VISIBLE_DEVICES")
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+            try:
+                # Inside child, logical device 0 maps to this physical GPU.
+                p = mp.Process(target=_apply_polyDT_on_gpu, args=(self, subset, 0))
+                p.start()
+                processes.append(p)
+            finally:
+                if old_vis is None:
+                    os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+                else:
+                    os.environ["CUDA_VISIBLE_DEVICES"] = old_vis
 
-            # 4) Wait for all GPU‐workers to finish
-            for p in processes:
-                p.join()
+        # 4) Wait for all GPU‐workers to finish
+        for p in processes:
+            p.join()
 
     def _apply_registration_to_bits(self):
         """Generate spotiflow + deconvolved, registered readout data and save to datastore."""

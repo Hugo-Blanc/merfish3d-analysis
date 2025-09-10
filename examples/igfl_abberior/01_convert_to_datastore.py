@@ -62,6 +62,7 @@ def convert_data(
     # load sample tile to extract acquisition metadata
     root_name = root_path.stem
     raw_folder = root_path / "Raw ome tiff"
+    
     sample_round_folder = raw_folder / f"{root_name}_r{(1):04d}"
     assert sample_round_folder.exists(), f"{sample_round_folder} doesn't exists."
     sample_list_tiles = list(sample_round_folder.glob("*.ome.tiff"))
@@ -76,8 +77,9 @@ def convert_data(
 
     # load experiment metadata
     num_rounds = len(list(raw_folder.glob(f"{root_name}_r*"))) # TODO fetch num rounds : ex num of round folder ? or master recipe ?
-    num_tiles = len(sample_list_tiles)
     num_ch = int(ome_metadata_dict["Image"]["Pixels"]["@SizeC"])
+    # num_tiles = len(sample_list_tiles)
+    num_tiles = 1  
     # z_step_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeZ"]) * 1e6
     z_step_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeZ"]) * 1e6
     yx_pixel_um = float(ome_metadata_dict["Image"]["Pixels"]["@PhysicalSizeX"]) * 1e6 # NB : x and y resolution are slightly different in ome metadata
@@ -89,6 +91,9 @@ def convert_data(
     channel_names = [chan["@Name"] for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
     em_wavelengths_um = [float(chan["@EmissionWavelength"])*1e6 for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
     ex_wavelengths_um = [float(chan["@ExcitationWavelength"])*1e6 for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
+    
+    # load decon folder 
+    decon_folder = root_path / "Hyugens decon"
     
     # channel_idxs = list(range(num_ch))
     # channels_active = [True for _ in range(num_ch)]
@@ -221,6 +226,7 @@ def convert_data(
     # Loop over data and create datastore.
     for round_idx in tqdm(range(num_rounds), desc="rounds"):
         round_folder = raw_folder / f"{root_name}_r{(round_idx + 1):04d}"
+        decon_round_folder = decon_folder / f"{root_name}_r{(round_idx + 1):04d} decon"
         assert round_folder.exists()
         for tile_idx in tqdm(range(num_tiles), desc="tile", leave=False):
             # initialize datastore tile
@@ -238,9 +244,17 @@ def convert_data(
             description_json = ome_metadata_dict["Folder"][2]['Description']
             ome_metadata_dict["Folder"][2]['Description']= json.loads(description_json)
             
+            # load decon image channel by channel and concatenate them
+            decon_image_ch_paths =  list(decon_round_folder.glob(f"{root_name}_r{(round_idx + 1):04d}_tile{(tile_idx):04d}_decon_ch*.tif"))
+            decon_image_ch_paths.sort()
+            assert len(decon_image_ch_paths)==num_ch, f"Found {len(decon_image_ch_paths)} channels for decon image \
+                {root_name}_r{(round_idx + 1):04d}_tile{(tile_idx):04d}, it doesn't match expected number of channels which is {num_ch}."
+            # print([path.stem.split("_")[-1] for path in decon_image_ch_paths])
+            decon_image = np.stack([imread(ch_img_path)[:z_size_crop,...] for ch_img_path in decon_image_ch_paths], axis=0)
+            
             # load raw data and make sure it is the right shape. If not, write
             # zeros for this round/stage position.
-            raw_image = imread(image_path)[:,:z_size_crop,...]
+            # raw_image = imread(image_path)[:,:z_size_crop,...]
             # if datastore.camera == "orcav3":
             #     raw_image = np.swapaxes(raw_image, 0, 1)
             #     if tile_idx == 0 and round_idx == 0:
@@ -248,40 +262,40 @@ def convert_data(
             # elif datastore.camera == "flir":
             #     if tile_idx == 0 and round_idx == 0:
             #         correct_shape = raw_image.shape
-            if raw_image is None or raw_image.shape != correct_shape:
+            if decon_image is None or decon_image.shape != correct_shape:
                 print("\nround=" + str(round_idx + 1) + "; tile=" + str(tile_idx + 1))
-                print("Found shape: " + str(raw_image.shape))
+                print("Found shape: " + str(decon_image.shape))
                 print("Correct shape: " + str(correct_shape))
                 print("Replacing data with zeros.\n")
-                raw_image = np.zeros(correct_shape, dtype=np.uint16)
+                decon_image = np.zeros(correct_shape, dtype=np.uint16)
 
             # Correct if camera is rotated wrt to stage
             if image_rotated:
-                raw_image = np.rot90(raw_image, k=-1, axes=(3, 2))
+                decon_image = np.rot90(decon_image, k=-1, axes=(3, 2))
 
             # Correct if camera is flipped in y wrt to stage
             if image_flipped_y:
-                raw_image = np.flip(raw_image, axis=2)
+                decon_image = np.flip(decon_image, axis=2)
 
             # Correct if camera is flipped in x wrt to stage
             if image_flipped_x:
-                raw_image = np.flip(raw_image, axis=3)
+                decon_image = np.flip(decon_image, axis=3)
 
             # Correct for known camera gain and offset
-            raw_image = (raw_image - datastore.offset) * datastore.e_per_ADU
-            raw_image[raw_image < 0.0] = 0.0
-            raw_image = raw_image.astype(np.uint16)
+            decon_image = (decon_image - datastore.offset) * datastore.e_per_ADU
+            decon_image[decon_image < 0.0] = 0.0
+            decon_image = decon_image.astype(np.uint16)
             gain_corrected = True
 
-            # Correct for known hot pixel map
-            if datastore.camera == "flir":
-                raw_image = replace_hot_pixels(datastore.noise_map, raw_image)
-                raw_image = replace_hot_pixels(
-                    np.max(raw_image, axis=0), raw_image, threshold=100
-                )
-                hot_pixel_corrected = True
-            else:
-                hot_pixel_corrected = False
+            # # Correct for known hot pixel map
+            # if datastore.camera == "flir":
+            #     raw_image = replace_hot_pixels(datastore.noise_map, raw_image)
+            #     raw_image = replace_hot_pixels(
+            #         np.max(raw_image, axis=0), raw_image, threshold=100
+            #     )
+            #     hot_pixel_corrected = True
+            # else:
+            #     hot_pixel_corrected = False
 
             # get stage position from ome metadata
             stage_x = np.array([np.round(float(plane["@PositionX"])*1e6, 2) for plane in ome_metadata_dict["Image"]["Pixels"]["Plane"]]).mean()
@@ -313,11 +327,11 @@ def convert_data(
             
             # write fidicual data (ch_idx = -1) and metadata
             datastore.save_local_corrected_image(
-                np.squeeze(raw_image[dye_to_chan_dict['DAPI'], :]).astype(np.uint16),
+                np.squeeze(decon_image[dye_to_chan_dict['DAPI'], :]).astype(np.uint16),
                 tile=tile_idx,
                 psf_idx=dye_order.index('DAPI'),
                 gain_correction=gain_corrected,
-                hotpixel_correction=hot_pixel_corrected,
+                hotpixel_correction=False,
                 shading_correction=False,
                 round=round_idx,
             )
@@ -330,11 +344,11 @@ def convert_data(
             # write readout channels and metadata
             for dye_name in tqdm(dye_order[1:], desc="bit channels", leave=False): 
                 datastore.save_local_corrected_image(
-                    np.squeeze(raw_image[dye_to_chan_dict[dye_name], :]).astype(np.uint16),
+                    np.squeeze(decon_image[dye_to_chan_dict[dye_name], :]).astype(np.uint16),
                     tile=tile_idx,
                     psf_idx=dye_order.index(dye_name),
                     gain_correction=gain_corrected,
-                    hotpixel_correction=hot_pixel_corrected,
+                    hotpixel_correction=False,
                     shading_correction=False,
                     bit=int(experiment_order[round_idx, dye_order.index(dye_name)])-1,
                 )

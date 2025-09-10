@@ -650,6 +650,7 @@ class PixelDecoder:
             )
 
             if self._z_crop:
+                # TODO upscale x2 spotiflow heatmap to match data shape
                 current_mask = np.asarray(
                     spotiflow_image[self._z_range[0] : self._z_range[1], :].result(),
                     dtype=np.float32,

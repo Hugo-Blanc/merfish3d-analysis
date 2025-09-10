@@ -24,8 +24,8 @@ def decode_pixels(
         path to experiment
     minimum_pixels_per_RNA : int
         minimum pixels with same barcode ID required to call a spot. Default = 9.
-    ufish_threshold : float
-        threshold to accept ufish prediction. Default = 0.25
+    spotiflow_threshold : float
+        threshold to accept spotiflow prediction. Default = 0.25
     magnitude_threshold: float
         minimum magnitude across all normalized bits required to accept a spot. Default = 1.5
     fdr_target : float
@@ -50,16 +50,17 @@ def decode_pixels(
         n_iterations=10,
         magnitude_threshold=magnitude_threshold,
         minimum_pixels=minimum_pixels_per_RNA,
-        ufish_threshold=ufish_threshold
+        spotiflow_threshold=spotiflow_threshold
     )
 
     # decoder.decode_one_tile(
     #     tile_idx = 0,
     #     gpu_id=0,
-    #     display_results=True,
+    #     display_results=False,
     #     magnitude_threshold=magnitude_threshold,
     #     minimum_pixels=minimum_pixels_per_RNA,
-    #     ufish_threshold=ufish_threshold
+    #     spotiflow_threshold=spotiflow_threshold, 
+    #     use_normalization=False,
     # )
     
     
@@ -85,7 +86,7 @@ def decode_pixels(
         prep_for_baysor=False,
         magnitude_threshold=magnitude_threshold,
         minimum_pixels=minimum_pixels_per_RNA,
-        ufish_threshold=ufish_threshold,
+        spotiflow_threshold=spotiflow_threshold,
         fdr_target=fdr_target
     )
     

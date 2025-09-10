@@ -445,7 +445,7 @@ def test_global_normalization_vectors(temp_dataset, mocker, static_image_data, m
             def __init__(self, data):
                 self.data = data
                 self.attrs = {
-                    'registered_ufish_data': data,
+                    'registered_spotiflow_data': data,
                     'registered_decon_data': data
                 }
                 

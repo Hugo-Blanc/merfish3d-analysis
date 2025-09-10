@@ -38,6 +38,7 @@ warnings.filterwarnings(
 )
 
 import numpy as np
+import pandas as pd
 from typing import Union
 import gc
 import SimpleITK as sitk
@@ -68,7 +69,7 @@ def _apply_first_polyDT_on_gpu(
 
     stderr_buffer = io.StringIO()
     with contextlib.redirect_stderr(stderr_buffer):
-         # ij_success = False
+        # ij_success = False
         # while not(ij_success):
         #     try:
         #         os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
@@ -88,6 +89,8 @@ def _apply_first_polyDT_on_gpu(
         )
         del ij
         gc.collect()
+
+        # ref_image_decon = raw0.copy()
 
     dr._datastore.save_local_registered_image(
         ref_image_decon,
@@ -284,7 +287,7 @@ def _apply_polyDT_on_gpu(
                 xyz_shift = np.asarray(lowres_xyz_shift,dtype=np.float32)
                 xyz_shift_float = [round(float(v),1) for v in lowres_xyz_shift]
 
-                #print(time_stamp(), f"GPU {gpu_id}: processed tile id: {dr._tile_id}; round id: {round_id}; rigid xyz offset: {xyz_shift_float}.")
+                # print(time_stamp(), f"GPU {gpu_id}: processed tile id: {dr._tile_id}; round id: {round_id}; rigid xyz offset: {xyz_shift_float}.")
                 
                 initial_xyz_transform = sitk.TranslationTransform(3, xyz_shift_float)
                 warped_mov_image_decon_float = apply_transform(
@@ -364,7 +367,7 @@ def _apply_bits_on_gpu(
     gpu_id: int = 0
 ):
     """
-    Run the “deconvolve→rigid+optical‐flow→UFish” loop for a subset of bits on a single GPU.
+    Run the “deconvolve→rigid+optical‐flow→Spotiflow” loop for a subset of bits on a single GPU.
     
     Parameters
     ----------
@@ -387,10 +390,12 @@ def _apply_bits_on_gpu(
     os.environ["ORT_LOG_SEVERITY_LEVEL"] = "3"
     import onnxruntime as ort
     ort.set_default_logger_severity(3)
-    from ufish.api import UFish
+    # from ufish.api import UFish
+    from spotiflow.model import Spotiflow 
     from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
     from merfish3danalysis.utils.registration import apply_transform
-
+    from skimage.transform import rescale
+    from skimage.exposure import rescale_intensity
 
     for bit_id in bit_list:
 
@@ -474,24 +479,20 @@ def _apply_bits_on_gpu(
             # clip to uint16
             data_reg = data_reg.clip(0,2**16-1).astype(np.uint16)
 
-            # UFISH
-            ufish = UFish(device=f"cuda:{gpu_id}")
-            ufish.load_weights_from_internet()
-            ufish_loc, ufish_data = ufish.predict(
-                data_reg, axes="zyx", blend_3d=False, batch_size=1
-            )
-
-            ufish_loc = ufish_loc.rename(
-                columns={"axis-0": "z", "axis-1": "y", "axis-2": "x"}
-            )
-            del ufish
+            # Spotiflow
+            spotiflow = Spotiflow.from_folder("/home/hblanc01/.spotiflow/models/synth_3d_grid_1", map_location='cuda')
+            spot_loc, spotiflow_details  = spotiflow.predict(data_reg, subpix=True, exclude_border=True, verbose=True)
+            spotiflow_loc = pd.DataFrame(list(zip(list(spot_loc[:, 0]), list(spot_loc[:, 1]), list(spot_loc[:, 2]))), columns=["z", "y", "x"])
+            spotiflow_heatmap = rescale_intensity(spotiflow_details.flow[...,0], in_range=(-1,1), out_range=(0,1))
+            # spotiflow_heatmap = spotiflow_details.heatmap
+            del spotiflow, spot_loc
             gc.collect()
 
             torch.cuda.empty_cache()
             cp.get_default_memory_pool().free_all_blocks()
             gc.collect()
 
-            # UFISH ROI sums
+            # Spotiflow ROI sums
             roi_z, roi_y, roi_x = 7, 5, 5
 
             def sum_pixels_in_roi(row, image, roi_dims):
@@ -506,28 +507,29 @@ def _apply_bits_on_gpu(
                 roi = image[int(zmin):int(zmax), int(ymin):int(ymax), int(xmin):int(xmax)]
                 return np.sum(roi)
 
-            ufish_loc["sum_prob_pixels"] = ufish_loc.apply(
-                sum_pixels_in_roi, axis=1, image=ufish_data, roi_dims=(roi_z, roi_y, roi_x)
+            # Output spotiflow probability map is downsampled by 2 
+            spotiflow_loc["sum_prob_pixels"] = spotiflow_loc.apply(
+                sum_pixels_in_roi, axis=1, image=spotiflow_heatmap, roi_dims=(roi_z, roi_y, roi_x)
             )
-            ufish_loc["sum_decon_pixels"] = ufish_loc.apply(
+            spotiflow_loc["sum_decon_pixels"] = spotiflow_loc.apply(
                 sum_pixels_in_roi, axis=1, image=data_reg, roi_dims=(roi_z, roi_y, roi_x)
             )
 
-            ufish_loc["tile_idx"] = dr._tile_ids.index(dr._tile_id)
-            ufish_loc["bit_idx"] = dr._bit_ids.index(bit_id) + 1
-            ufish_loc["tile_z_px"] = ufish_loc["z"]
-            ufish_loc["tile_y_px"] = ufish_loc["y"]
-            ufish_loc["tile_x_px"] = ufish_loc["x"]
+            spotiflow_loc["tile_idx"] = dr._tile_ids.index(dr._tile_id)
+            spotiflow_loc["bit_idx"] = dr._bit_ids.index(bit_id) + 1
+            spotiflow_loc["tile_z_px"] = spotiflow_loc["z"]
+            spotiflow_loc["tile_y_px"] = spotiflow_loc["y"]
+            spotiflow_loc["tile_x_px"] = spotiflow_loc["x"]
 
             # save results
             dr._datastore.save_local_registered_image(
                 data_reg, tile=dr._tile_id, deconvolution=True, bit=bit_id
             )
-            dr._datastore.save_local_ufish_image(ufish_data, tile=dr._tile_id, bit=bit_id)
-            dr._datastore.save_local_ufish_spots(ufish_loc, tile=dr._tile_id, bit=bit_id)
+            dr._datastore.save_local_spotiflow_image(spotiflow_heatmap, tile=dr._tile_id, bit=bit_id)
+            dr._datastore.save_local_spotiflow_spots(spotiflow_loc, tile=dr._tile_id, bit=bit_id)
             print(time_stamp(), f"GPU {gpu_id}: finished readout tile id: {dr._tile_id}; bit id: {bit_id}.")
 
-            del data_reg, ufish_data, ufish_loc
+            del data_reg, spotiflow_details, spotiflow_loc
             gc.collect()
 
     return True
@@ -996,14 +998,7 @@ class DataRegistration:
             _apply_first_polyDT_on_gpu(self,0)
 
         all_rounds = list(self._round_ids[1:])
-        # 1) How many GPUs do we have?
-        if self._num_gpus == 0:
-            raise RuntimeError("No GPUs detected. Cannot run _generate_registrations().")
-        elif self._num_gpus == 1:
-            _apply_polyDT_on_gpu(self, all_rounds, 0)
-        else :
-            # 2) Grab all rounds IDs after round 0 and split into `num_gpus` chunks
-            chunk_size = (len(all_rounds) + self._num_gpus - 1) // self._num_gpus  # ceiling division
+        chunk_size = (len(all_rounds) + self._num_gpus - 1) // self._num_gpus  # ceiling division
 
             # 3) Launch one process per GPU (only as many as needed)
             processes = []
@@ -1033,122 +1028,7 @@ class DataRegistration:
                 p.join()
 
     def _apply_registration_to_bits(self):
-        """Generate ufish + deconvolved, registered readout data and save to datastore."""
-        # for bit_idx, bit_id in enumerate(tqdm(self._bit_ids,desc='bits')):
-
-        #     r_idx = self._datastore.load_local_round_linker(
-        #         tile=self._tile_id,
-        #         bit=bit_id
-        #     )
-        #     r_idx = r_idx - 1
-            
-        #     psf_idx = self._datastore.load_local_psf_idx(self._tile_id,
-        #             round=self._round_ids[r_idx])
-            
-        #     ex_wavelength_um, em_wavelength_um = self._datastore.load_local_wavelengths_um(
-        #         tile=self._tile_id,
-        #         bit=bit_id
-        #     )
-            
-        #     # # TO DO: hacky fix. Need to come up with a better way.
-        #     # if ex_wavelength_um < 600:
-        #     #     psf_idx = 1
-        #     # else:
-        #     #     psf_idx = 2
-
-        #     test = self._datastore.load_local_registered_image(
-        #         tile=self._tile_id,
-        #         bit=bit_id
-        #     )
-            
-        #     if test is None:
-        #         reg_decon_data_on_disk = False
-        #     else:
-        #         reg_decon_data_on_disk = True
-
-
-        #     if (not (reg_decon_data_on_disk) or self._overwrite_registered):
-                
-        #         corrected_image = self._datastore.load_local_corrected_image(
-        #             tile=self._tile_id,
-        #             bit=bit_id,
-        #             return_future=False,
-        #         )
-
-        #         decon_image = chunked_cudadecon(
-        #             image=corrected_image,
-        #             psf=self._psfs[psf_idx, :],
-        #             image_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
-        #             psf_voxel_zyx_um=self._datastore.voxel_size_zyx_um,
-        #             wavelength_um=em_wavelength_um,
-        #             na=self._datastore.na,
-        #             ri=self._datastore.ri,
-        #             n_iters=self._decon_iters,
-        #             background=self._decon_background,
-        #         )
-
-
-        #         if r_idx > 0:
-        #             rigid_xform_xyz_um = self._datastore.load_local_rigid_xform_xyz_px(
-        #                 tile=self._tile_id,
-        #                 round=self._round_ids[r_idx],
-        #             )
-        #             shift_xyz = [float(i) for i in rigid_xform_xyz_um]
-        #             xyz_transform = sitk.TranslationTransform(3, shift_xyz)
-
-        #             if self._perform_optical_flow:
-                        
-        #                 of_xform_px, _ = self._datastore.load_coord_of_xform_px(
-        #                     tile=self._tile_id,
-        #                     round=self._round_ids[r_idx],
-        #                     return_future=False
-        #                 )
-
-        #                 of_xform_sitk = sitk.GetImageFromArray(
-        #                     of_xform_px.transpose(1, 2, 3, 0).astype(np.float64),
-        #                     isVector=True,
-        #                 )
-
-        #                 interpolator = sitk.sitkLinear
-        #                 identity_transform = sitk.Transform(3, sitk.sitkIdentity)
-                        
-        #                 optical_flow_sitk = sitk.Resample(
-        #                     of_xform_sitk,
-        #                     sitk.GetImageFromArray(decon_image),
-        #                     identity_transform,
-        #                     interpolator,
-        #                     0,
-        #                     of_xform_sitk.GetPixelID(),
-        #                 )
-        #                 displacement_field = sitk.DisplacementFieldTransform(
-        #                     optical_flow_sitk
-        #                 )
-        #                 del optical_flow_sitk, of_xform_px
-        #                 gc.collect()
-
-        #             decon_image_rigid = apply_transform(
-        #                 decon_image, 
-        #                 decon_image, 
-        #                 xyz_transform
-        #             )
-        #             del decon_image
-
-        #             if self._perform_optical_flow:
-        #                 decon_bit_image_sitk = sitk.Resample(
-        #                     sitk.GetImageFromArray(decon_image_rigid), 
-        #                     displacement_field
-        #                 )
-        #                 del displacement_field
-
-        #                 data_decon_registered = sitk.GetArrayFromImage(
-        #                     decon_bit_image_sitk
-        #                 ).astype(np.float32)
-        #                 del decon_bit_image_sitk
-        #             else:
-        #                 data_decon_registered = decon_image_rigid.copy()
-        #                 del decon_image_rigid
-        #             gc.collect()        
-        
+        """Generate spotiflow + deconvolved, registered readout data and save to datastore."""
         # 1) How many GPUs do we have?
         if self._num_gpus == 0:
             raise RuntimeError("No GPUs detected. Cannot run _apply_registration_to_bits().")

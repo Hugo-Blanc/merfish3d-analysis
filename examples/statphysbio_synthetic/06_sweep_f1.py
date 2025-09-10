@@ -12,6 +12,9 @@ import pandas as pd
 from scipy.spatial import cKDTree
 import numpy as np
 import json
+import seaborn as sns
+import matplotlib.pyplot as plt
+import ast
 
 def calculate_F1_with_radius(
     qi2lab_coords: np.ndarray,
@@ -148,7 +151,7 @@ def calculate_F1(
 def decode_pixels(
     root_path: Path, 
     mag_threshold: float, 
-    ufish_threshold: float, 
+    spotiflow_threshold: float, 
 ):
     """Run pixel decoding with the given parameters.
     
@@ -158,8 +161,8 @@ def decode_pixels(
         The root path of the experiment.
     mag_threshold : float
         The magnitude threshold
-    ufish_threshold : float
-        The ufish threshold.
+    spotiflow_threshold : float
+        The spotiflow threshold.
     """
 
     datastore_path = root_path / Path(r"qi2labdatastore")
@@ -178,7 +181,7 @@ def decode_pixels(
         n_random_tiles=1,
         n_iterations=1,
         minimum_pixels=9,
-        ufish_threshold=ufish_threshold,
+        spotiflow_threshold=spotiflow_threshold,
         magnitude_threshold=mag_threshold
     )
 
@@ -187,14 +190,14 @@ def decode_pixels(
         prep_for_baysor=False,
         minimum_pixels=9,
         magnitude_threshold=mag_threshold,
-        ufish_threshold=ufish_threshold
+        spotiflow_threshold=spotiflow_threshold
     )
 
 def sweep_decode_params(
     root_path: Path,
     gt_path: Path,
-    ufish_threshold_range: tuple[float] = (0.1, 0.6),
-    ufish_threshold_step: float = 0.05,
+    spotiflow_threshold_range: tuple[float] = (0.1, 0.6),
+    spotiflow_threshold_step: float = 0.05,
     mag_threshold_range: tuple[float] = (0.5,2.0),
     mag_threshold_step: float = 0.1,
 ):
@@ -206,10 +209,10 @@ def sweep_decode_params(
         The root path of the experiment.
     gt_path : Path
         The path to the ground truth spots.
-    ufish_threshold_range : tuple, default [0.05,0.3]
-        The range of ufish thresholds to sweep through.
-    ufish_threshold_step : float, default .05
-        The step size for the ufish threshold sweep
+    spotiflow_threshold_range : tuple, default [0.05,0.3]
+        The range of spotiflow thresholds to sweep through.
+    spotiflow_threshold_step : float, default .05
+        The step size for the spotiflow threshold sweep
     mag_threshold_range : tuple, default [1.0,2.0]
         The range of minimum magnitude threshold to sweep through.
     mag_threshold_step : float, default 0.05
@@ -223,10 +226,10 @@ def sweep_decode_params(
         dtype=np.float32
     ).tolist()
 
-    ufish_values = np.arange(
-        ufish_threshold_range[0], 
-        ufish_threshold_range[1], 
-        ufish_threshold_step, 
+    spotiflow_values = np.arange(
+        spotiflow_threshold_range[0], 
+        spotiflow_threshold_range[1], 
+        spotiflow_threshold_step, 
         dtype=np.float32
     ).tolist()
 
@@ -234,21 +237,21 @@ def sweep_decode_params(
     save_path = root_path / "decode_params_results.json"
 
 
-    for ufish in ufish_values:
+    for spotiflow in spotiflow_values:
         for mag in mag_values:
             params = {
                 "fdr": .05,
                 "min_pixels": 9,
                 "mag_thresh": round(mag,2),
-                "ufish_threshold": round(ufish, 2)
+                "spotiflow_threshold": round(spotiflow, 2)
             }
 
             try:
-                print(time_stamp(), f"ufish threshold: {round(ufish,2)}; magnitude threshold: {round(mag,2)}")
+                print(time_stamp(), f"spotiflow threshold: {round(spotiflow,2)}; magnitude threshold: {round(mag,2)}")
                 decode_pixels(
                     root_path=root_path,
                     mag_threshold=round(mag,2),
-                    ufish_threshold=round(ufish,2),
+                    spotiflow_threshold=round(spotiflow,2),
                 )
 
                 result = calculate_F1(
@@ -260,13 +263,51 @@ def sweep_decode_params(
                 result = {"error": str(e)}
 
             results[str(params)] = result
-
+            
             print(result)
 
             with save_path.open(mode='w', encoding='utf-8') as file:
                 json.dump(results, file, indent=2)
 
+def plot_heatmap_f1_sweep(
+        root_path: Path, 
+        sweep_info: str = ''
+    ):
+    """Plot result from sweep through decoding parameters and calculated F1 scores.
+    
+    Parameters
+    ----------
+    root_path : Path
+        The root path of the experiment.
+    """
+    sns.set_theme()
+    
+    # load and format json into a pandas Dataframe
+    f1_sweep_path = root_path / "decode_params_results.json"
+    with open(f1_sweep_path) as f:
+        f1_sweep = json.load(f)
+    tidy_f1_sweep = {i:ast.literal_eval(key)|value for i, (key,value) in enumerate(list(f1_sweep.items()))}
+    df_f1_sweep = pd.DataFrame.from_dict(tidy_f1_sweep, orient="index")
+
+    # Plot and save the results as annotated heatmap
+    metrics = ["F1 Score", "Precision", "Recall"]
+    for metric in metrics :
+        metric_heatmap = (
+            df_f1_sweep
+            .pivot(index="mag_thresh", columns="spotiflow_threshold", values=metric)
+        )
+        # Draw a heatmap with the numeric values in each cell
+        f, ax = plt.subplots(figsize=(9, 6))
+        max_val = metric_heatmap.max().max()
+        sns.heatmap(metric_heatmap,mask=metric_heatmap == max_val, annot=True, fmt="n", linewidths=.5, ax=ax, vmin=0, vmax=1, cmap="RdYlGn")
+        sns.heatmap(metric_heatmap, mask=metric_heatmap != max_val, annot=True, fmt="n", annot_kws={"weight":'bold'}, linewidths=.5, ax=ax, vmin=0, vmax=1, cmap="RdYlGn", cbar=False)
+        fig_name = f"Heatmap of {metric} for f1 sweep {sweep_info}"
+        f.suptitle(fig_name)
+        f.savefig(root_path / f"{fig_name}.png")
+
 if __name__ == "__main__":
-    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition_spotiflow_synth_3D_grid_1")
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition_ufish")
     gt_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/GT_spots.csv")
+    run_info = root_path.stem.split("sim_acquisition")[1]
     sweep_decode_params(root_path=root_path, gt_path=gt_path)
+    plot_heatmap_f1_sweep(root_path=root_path, sweep_info=run_info)

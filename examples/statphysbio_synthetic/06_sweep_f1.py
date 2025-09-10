@@ -267,6 +267,6 @@ def sweep_decode_params(
                 json.dump(results, file, indent=2)
 
 if __name__ == "__main__":
-    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition_ufish")
+    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition_spotiflow_synth_3D_grid_1")
     gt_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/GT_spots.csv")
     sweep_decode_params(root_path=root_path, gt_path=gt_path)

@@ -502,7 +502,7 @@ def chunked_rlgc(
     else:
         output_sum   = np.zeros_like(bkd_image, dtype=np.float32)
         output_weight = np.zeros_like(bkd_image, dtype=np.float32)
-        crop_size = (bkd_image.shape[0], 1400, 1400)
+        crop_size = (bkd_image.shape[0], crop_yx, crop_yx)
         overlap = (0, 64, 64)
         slices = Slicer(bkd_image, crop_size=crop_size, overlap=overlap, pad = True)
         

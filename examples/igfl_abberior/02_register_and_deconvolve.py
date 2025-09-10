@@ -29,12 +29,14 @@ def local_register_data(root_path: Path):
     # initialize registration class
     registration_factory = DataRegistration(
         datastore=datastore, 
+        decon_polyDT=False,
         perform_optical_flow=True, 
-        overwrite_registered=False,
-        save_all_polyDT_registered=False, 
-        decon_iters=10,
-        decon_background=0,
+        overwrite_registered=True,
+        save_all_polyDT_registered=True, 
+        crop_yx_decon = 512,
     )
+    # Temp : don't use the imagej part of rlgc
+    registration_factory._bkd_subtract_polyDT=False
 
     # run local registration across rounds
     registration_factory.register_all_tiles()
@@ -56,7 +58,7 @@ def global_register_data(
     root_path: Path
         path to experiment
     
-    create_max_proj_tiff: Optional[bool]
+    create_max_proj_tiff: Optional[bool] 
         create max projection tiff in the segmentation/cellpose directory. 
         Default = True
     """
@@ -84,19 +86,18 @@ def global_register_data(
 
         voxel_zyx_um = datastore.voxel_size_zyx_um
 
-        scale = {"z": voxel_zyx_um[0], "y": voxel_zyx_um[1], "x": voxel_zyx_um[1]}
+        scale = {"z": voxel_zyx_um[0], "y": voxel_zyx_um[1], "x": voxel_zyx_um[2]}
 
-        tile_stage_position_zyx_um, tile_affine_zyx_px = datastore.load_local_stage_position_zyx_um(
+        tile_position_zyx_um, affine_zyx_px = datastore.load_local_stage_position_zyx_um(
             tile_id, round_id
         )
 
         tile_grid_positions = {
-            "z": np.round(tile_stage_position_zyx_um[0], 2),
-            "y": np.round(tile_stage_position_zyx_um[1], 2),
-            "x": np.round(tile_stage_position_zyx_um[2], 2),
+            "z": np.round(tile_position_zyx_um[0], 2),
+            "y": np.round(tile_position_zyx_um[1], 2),
+            "x": np.round(tile_position_zyx_um[2], 2),
         }
 
-        im_data = []
         im_data = datastore.load_local_registered_image(
             tile=tile_id, round=round_id, return_future=False
         )
@@ -106,6 +107,7 @@ def global_register_data(
             dims=("c", "z", "y", "x"),
             scale=scale,
             translation=tile_grid_positions,
+            affine=affine_zyx_px,
             transform_key="stage_metadata",
         )
 
@@ -114,7 +116,7 @@ def global_register_data(
         del im_data
         gc.collect()
 
-    # perform registration in 2 steps, from most downsampling to least.
+    # perform registration in 3 steps, from most downsampling to least.
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         with dask.diagnostics.ProgressBar():
             _ = registration.register(
@@ -165,7 +167,7 @@ def global_register_data(
                 "y": voxel_zyx_um[1], 
                 "x": voxel_zyx_um[1],
             },
-            output_chunksize=128,
+            output_chunksize=512,
             overlap_in_pixels=64,
         )
         # * np.round(voxel_zyx_um[0] / voxel_zyx_um[1], 1),
@@ -183,6 +185,18 @@ def global_register_data(
 
         del fused_msim
 
+        # if the next step fails, you can try the following code instead
+        # it will take longer, but should limit memory usage. You still need
+        # enough memory to hold the result in RAM.
+        """
+        datastore.save_global_fidicual_image(
+            fused_image=fused_sim.data.compute(scheduler="single-threaded"),
+            affine_zyx_um=affine,
+            origin_zyx_um=origin,
+            spacing_zyx_um=spacing,
+        )
+        
+        """
         datastore.save_global_fidicual_image(
             fused_image=fused_sim.data.compute(scheduler="threads", num_workers=12),
             affine_zyx_um=affine,
@@ -192,24 +206,19 @@ def global_register_data(
 
         del fused_sim
         gc.collect()
-
-    # update datastore state
-    datastore_state = datastore.datastore_state
-    datastore_state.update({"GlobalRegistered": True})
-    datastore_state.update({"Fused": True})
-    datastore.datastore_state = datastore_state
     
     # write max projection OME-TIFF for cellpose GUI
     if create_max_proj_tiff:
         # load downsampled, fused polyDT image and coordinates 
         polyDT_fused, _, _, spacing_zyx_um = datastore.load_global_fidicual_image(return_future=False)
+
         # create max projection
         polyDT_max_projection = np.max(np.squeeze(polyDT_fused),axis=0)
         del polyDT_fused
         
         filename = 'DAPI_max_projection.ome.tiff'
         filename_path = datastore._datastore_path / Path("fused") / Path(filename)
-        with TiffWriter(filename_path, bigtiff=True, mode='w') as tif:
+        with TiffWriter(filename_path, bigtiff=True) as tif:
             metadata={
                 'axes': 'YX',
                 'SignificantBits': 16,
@@ -234,8 +243,13 @@ def global_register_data(
                 **options,
                 metadata=metadata
             )
+    # update datastore state
+    datastore_state = datastore.datastore_state
+    datastore_state.update({"GlobalRegistered": True})
+    datastore_state.update({"Fused": True})
+    datastore.datastore_state = datastore_state
     
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/d/EQUIPEX/Data/20250404_Abberior_Merfish_7C")
+    root_path = Path(r"/home/hblanc01/Data/20250718 DH_Merfish_Disc_2")
     local_register_data(root_path)
     global_register_data(root_path)

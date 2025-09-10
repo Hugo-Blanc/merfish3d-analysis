@@ -73,9 +73,8 @@ def convert_data(
     ome_metadata_dict["Folder"][2]['Description']= json.loads(description_json)
     with open(root_path / "ome_metadata.json", "w") as f:
         json.dump(ome_metadata_dict,f,indent=4)
+
     # load experiment metadata
-    # ------------------------
-    
     num_rounds = len(list(raw_folder.glob(f"{root_name}_r*"))) # TODO fetch num rounds : ex num of round folder ? or master recipe ?
     num_tiles = len(sample_list_tiles)
     num_ch = int(ome_metadata_dict["Image"]["Pixels"]["@SizeC"])
@@ -85,7 +84,7 @@ def convert_data(
     voxel_size_zyx_um = [z_step_um, yx_pixel_um]
     na = float(ome_metadata_dict["Folder"][2]["Description"]["objective_lens"]["name"].split("NA")[-1].split("(")[0]) #TODO fix messy ome-xml
     ri = 1.4 # TODO get from the ome-metadata, correspond to silicon ri
-    ri_sample = 1.38 #TODO estimate sample ri
+    ri_sample = 1.33 #TODO estimate sample ri
     
     channel_names = [chan["@Name"] for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
     em_wavelengths_um = [float(chan["@EmissionWavelength"])*1e6 for chan in  ome_metadata_dict["Image"]["Pixels"]["Channel"]]
@@ -107,17 +106,17 @@ def convert_data(
     if channel_order_path is None:
         # df_experiment_order = pd.read_csv(root_path / Path("channel_order.csv"), index_col=0)
         df_experiment_order = pd.read_csv(root_path / Path("channel_order.csv"))
-        dye_order = list(df_experiment_order.columns[1:])
+        dye_order = list(df_experiment_order.columns)
         experiment_order = df_experiment_order.values
         # experiment_order = df_experiment_order
     else:
         df_experiment_order = pd.read_csv(channel_order_path)
-        dye_order = list(df_experiment_order.columns[1:])
+        dye_order = list(df_experiment_order.columns)
         experiment_order = df_experiment_order.values
         # experiment_order = df_experiment_order
     
     # Add fiducial DAPI channel
-    dye_order.insert(0,'DAPI')
+    # dye_order.insert(0,'DAPI')
     # Map dye order to channel order 
     dye_to_chan_dict = {dye_name : channel_names.index(dye_name) for dye_name in dye_order}
     
@@ -159,7 +158,6 @@ def convert_data(
         datastore = qi2labDataStore(datastore_path)
     else:
         datastore = qi2labDataStore(output_path)
-
 
     # populate datastore metadata
     datastore.channels_in_data = dye_order
@@ -211,12 +209,15 @@ def convert_data(
     #             if max_x < stage_x:
     #                 max_x = stage_x
                     
+    # TODO : fix memory issue when tiles are too big. For now crop tiles in Z
+    z_size_crop = 100   
     # Fetch expected image shape (CZYX)
     correct_shape = (int(ome_metadata_dict["Image"]["Pixels"]["@SizeC"]), 
-                     int(ome_metadata_dict["Image"]["Pixels"]["@SizeZ"]), 
+                     z_size_crop,
                      int(ome_metadata_dict["Image"]["Pixels"]["@SizeY"]),
                      int(ome_metadata_dict["Image"]["Pixels"]["@SizeX"]))
-    
+    # int(ome_metadata_dict["Image"]["Pixels"]["@SizeZ"]), 
+
     # Loop over data and create datastore.
     for round_idx in tqdm(range(num_rounds), desc="rounds"):
         round_folder = raw_folder / f"{root_name}_r{(round_idx + 1):04d}"
@@ -228,7 +229,7 @@ def convert_data(
                 datastore.initialize_tile(tile_idx)
 
             # load raw image
-            image_path = round_folder / f"{root_name}_r{(round_idx + 1):04d}_tile{(tile_idx+1):04d}.ome.tiff"
+            image_path = round_folder / f"{root_name}_r{(round_idx + 1):04d}_tile{(tile_idx):04d}.ome.tiff"
             assert  image_path.exists()
             # load ome metadata
             image_ome_tif = TiffFile(image_path)
@@ -239,7 +240,7 @@ def convert_data(
             
             # load raw data and make sure it is the right shape. If not, write
             # zeros for this round/stage position.
-            raw_image = imread(image_path)
+            raw_image = imread(image_path)[:,:z_size_crop,...]
             # if datastore.camera == "orcav3":
             #     raw_image = np.swapaxes(raw_image, 0, 1)
             #     if tile_idx == 0 and round_idx == 0:
@@ -327,20 +328,20 @@ def convert_data(
             )
             
             # write readout channels and metadata
-            for dye_idx, dye_name in tqdm(enumerate(dye_order), desc="bit channels", leave=False): 
+            for dye_name in tqdm(dye_order[1:], desc="bit channels", leave=False): 
                 datastore.save_local_corrected_image(
                     np.squeeze(raw_image[dye_to_chan_dict[dye_name], :]).astype(np.uint16),
                     tile=tile_idx,
-                    psf_idx=dye_idx,
+                    psf_idx=dye_order.index(dye_name),
                     gain_correction=gain_corrected,
                     hotpixel_correction=hot_pixel_corrected,
                     shading_correction=False,
-                    bit=int(experiment_order[round_idx, dye_idx]) -1,
+                    bit=int(experiment_order[round_idx, dye_order.index(dye_name)])-1,
                 )
                 datastore.save_local_wavelengths_um(
                     (ex_wavelengths_um[dye_to_chan_dict[dye_name]], em_wavelengths_um[dye_to_chan_dict[dye_name]]),
                     tile=tile_idx,
-                    bit=int(experiment_order[round_idx, dye_idx]) - 1,
+                    bit=int(experiment_order[round_idx, dye_order.index(dye_name)])-1,
                 )
 
     datastore_state = datastore.datastore_state
@@ -348,7 +349,7 @@ def convert_data(
     datastore.datastore_state = datastore_state
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/d/EQUIPEX/Data/20250404_Abberior_Merfish_7C")
+    root_path = Path(r"/home/hblanc01/Data/20250718 DH_Merfish_Disc_2")
     convert_data(
         root_path=root_path,
     )

@@ -224,7 +224,7 @@ def _apply_polyDT_on_gpu(
                             psf=dr._psfs[0, :],
                             gpu_id=gpu_id,
                             crop_yx = dr._crop_yx_decon,
-                            bkd = True,
+                            bkd = dr._bkd_subtract_polyDT,
                             ij = ij
                         )
                 else:
@@ -987,48 +987,50 @@ class DataRegistration:
                     
         #             del mov_image_sitk, displacement_field
         #             gc.collect()
-            p_first = mp.Process(target=_apply_first_polyDT_on_gpu, args=(self,0))
-            p_first.start()
-            p_first.join()
 
+        # Test wihou multiprocessing
+        # p_first = mp.Process(target=_apply_first_polyDT_on_gpu, args=(self,0))
+        # p_first.start()
+        # p_first.join()
+
+            _apply_first_polyDT_on_gpu(self,0)
+
+        all_rounds = list(self._round_ids[1:])
         # 1) How many GPUs do we have?
         if self._num_gpus == 0:
             raise RuntimeError("No GPUs detected. Cannot run _generate_registrations().")
+        elif self._num_gpus == 1:
+            _apply_polyDT_on_gpu(self, all_rounds, 0)
+        else :
+            # 2) Grab all rounds IDs after round 0 and split into `num_gpus` chunks
+            chunk_size = (len(all_rounds) + self._num_gpus - 1) // self._num_gpus  # ceiling division
 
-        # 2) Grab all rounds IDs after round 0 and split into `num_gpus` chunks
-        all_rounds = list(self._round_ids[1:])
-        chunk_size = (len(all_rounds) + self._num_gpus - 1) // self._num_gpus  # ceiling division
+            # 3) Launch one process per GPU (only as many as needed)
+            processes = []
+            for gpu_id in range(self._num_gpus):
+                start = gpu_id * chunk_size
+                end = min(start + chunk_size, len(all_rounds))
+                if start >= end:
+                    break  # no more rounds to assign
 
+                subset = all_rounds[start:end]
+        
+                old_vis = os.environ.get("CUDA_VISIBLE_DEVICES")
+                os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+                try:
+                    # Inside child, logical device 0 maps to this physical GPU.
+                    p = mp.Process(target=_apply_polyDT_on_gpu, args=(self, subset, 0))
+                    p.start()
+                    processes.append(p)
+                finally:
+                    if old_vis is None:
+                        os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+                    else:
+                        os.environ["CUDA_VISIBLE_DEVICES"] = old_vis
 
-
-
-
-        # 3) Launch one process per GPU (only as many as needed)
-        processes = []
-        for gpu_id in range(self._num_gpus):
-            start = gpu_id * chunk_size
-            end = min(start + chunk_size, len(all_rounds))
-            if start >= end:
-                break  # no more rounds to assign
-
-            subset = all_rounds[start:end]
-     
-            old_vis = os.environ.get("CUDA_VISIBLE_DEVICES")
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            try:
-                # Inside child, logical device 0 maps to this physical GPU.
-                p = mp.Process(target=_apply_polyDT_on_gpu, args=(self, subset, 0))
-                p.start()
-                processes.append(p)
-            finally:
-                if old_vis is None:
-                    os.environ.pop("CUDA_VISIBLE_DEVICES", None)
-                else:
-                    os.environ["CUDA_VISIBLE_DEVICES"] = old_vis
-
-        # 4) Wait for all GPU‐workers to finish
-        for p in processes:
-            p.join()
+            # 4) Wait for all GPU‐workers to finish
+            for p in processes:
+                p.join()
 
     def _apply_registration_to_bits(self):
         """Generate ufish + deconvolved, registered readout data and save to datastore."""

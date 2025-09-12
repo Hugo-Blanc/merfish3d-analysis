@@ -89,7 +89,7 @@ def compute_warpfield(
         ref = img_ref, 
         vol = img_trg, 
         recipe = recipe,
-        verbose = False,
+        verbose = True,
         gpu_id = gpu_id,
     )
     warped_image = cp.asnumpy(warped_image).astype(np.float32)

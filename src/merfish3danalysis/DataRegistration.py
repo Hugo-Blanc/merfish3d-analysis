@@ -208,7 +208,7 @@ def _apply_polyDT_on_gpu(
                 xyz_shift = np.asarray(lowres_xyz_shift,dtype=np.float32)
                 xyz_shift_float = [round(float(v),1) for v in lowres_xyz_shift]
 
-                # print(time_stamp(), f"GPU {gpu_id}: processed tile id: {dr._tile_id}; round id: {round_id}; rigid xyz offset: {xyz_shift_float}.")
+                print(time_stamp(), f"GPU {gpu_id}: processed tile id: {dr._tile_id}; round id: {round_id}; rigid xyz offset: {xyz_shift_float}.")
                 
                 initial_xyz_transform = sitk.TranslationTransform(3, xyz_shift_float)
                 warped_mov_image_decon_float = apply_transform(
@@ -607,7 +607,7 @@ class DataRegistration:
         for tile_id in self._datastore.tile_ids:
             self.tile_id=tile_id
             self._generate_registrations()
-            self._apply_registration_to_bits()
+            # self._apply_registration_to_bits()
             
     def register_one_tile(self, tile_id: Union[int,str]):
         """Helper function to register one tile.

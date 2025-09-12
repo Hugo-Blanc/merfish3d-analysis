@@ -29,7 +29,7 @@ def local_register_data(root_path: Path):
     # initialize registration class
     registration_factory = DataRegistration(
         datastore=datastore, 
-        perform_optical_flow=False, 
+        perform_optical_flow=True, 
         overwrite_registered=True,
         save_all_polyDT_registered=True, 
     )
@@ -250,4 +250,4 @@ def global_register_data(
 if __name__ == "__main__":
     root_path = Path(r"/home/hblanc01/Data/20250718 DH_Merfish_Disc_2")
     local_register_data(root_path)
-    global_register_data(root_path)
+    # global_register_data(root_path)

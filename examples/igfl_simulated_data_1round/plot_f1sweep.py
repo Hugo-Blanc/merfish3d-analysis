@@ -1,3 +1,4 @@
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -42,6 +43,6 @@ def plot_f1_sweep_from_file(
         f.savefig(save_folder / f"{fig_name}.png")
 
 if __name__ == "__main__":
-    f1_sweep_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition_ufish/decode_params_results_ufish2.json")
+    f1_sweep_path = Path(r"/home/hblanc01/Data/sparse_16bit_example/sim_acquisition_spotmap_synth_3D_grid_1/decode_params_results_spotmap_synth_3D_grid_1.json")
     run_info = f1_sweep_path.stem.split("decode_params_results_")[1]
     plot_f1_sweep_from_file(f1_sweep_path=f1_sweep_path, sweep_info=run_info)

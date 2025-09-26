@@ -57,7 +57,7 @@ def decode_tiles_worker(
     lowpass_sigma,
     magnitude_threshold,
     minimum_pixels,
-    spotiflow_threshold,
+    spotmap_threshold,
 ):
     """Worker that runs decode_one_tile on a subset of tiles under one GPU."""
     import cupy as cp
@@ -87,7 +87,7 @@ def decode_tiles_worker(
             lowpass_sigma=lowpass_sigma,
             magnitude_threshold=magnitude_threshold,
             minimum_pixels=minimum_pixels,
-            spotiflow_threshold=spotiflow_threshold,
+            spotmap_threshold=spotmap_threshold,
             use_normalization=True,
             gpu_id=gpu_id,
         )
@@ -110,7 +110,7 @@ def _optimize_norm_worker(
     lowpass_sigma,
     magnitude_threshold,
     minimum_pixels,
-    spotiflow_threshold,
+    spotmap_threshold,
 ):
     """Worker that runs one iteration of normalization‐by‐decoding on a GPU."""
     import cupy as cp
@@ -142,7 +142,7 @@ def _optimize_norm_worker(
             lowpass_sigma=lowpass_sigma,
             magnitude_threshold=magnitude_threshold,
             minimum_pixels=minimum_pixels,
-            spotiflow_threshold=spotiflow_threshold,
+            spotmap_threshold=spotmap_threshold,
             use_normalization=use_norm,
             gpu_id=gpu_id,
         )
@@ -356,11 +356,11 @@ class PixelDecoder:
                     decon_image = self._datastore.load_local_registered_image(
                         tile=tile_id, bit=bit_id, return_future=False
                     )
-                    spotiflow_image = self._datastore.load_local_spotiflow_image(
+                    spotmap_image = self._datastore.load_local_spotmap_image(
                         tile=tile_id, bit=bit_id, return_future=False
                     )
                     current_image = cp.where(
-                        cp.asarray(spotiflow_image, dtype=cp.float32) > 0.1,
+                        cp.asarray(spotmap_image, dtype=cp.float32) > 0.1,
                         cp.asarray(decon_image, dtype=cp.float32),
                         0.0,
                     )
@@ -612,13 +612,13 @@ class PixelDecoder:
             cp.get_default_memory_pool().free_all_blocks()
             cp.get_default_pinned_memory_pool().free_all_blocks()
 
-    def _load_bit_data(self, spotiflow_threshold: Optional[float] = 0.25):
+    def _load_bit_data(self, spotmap_threshold: Optional[float] = 0.25):
         """Load raw data for all bits in the tile.
         
         Parameters
         ----------
-        spotiflow_threshold : Optional[float], default 0.5
-            Threshold for spotiflow image.
+        spotmap_threshold : Optional[float], default 0.5
+            Threshold for spotmap image.
         """
 
         if self._verbose > 1:
@@ -644,20 +644,20 @@ class PixelDecoder:
                 tile=self._tile_idx,
                 bit=bit_id,
             )
-            spotiflow_image = self._datastore.load_local_spotiflow_image(
+            spotmap_image = self._datastore.load_local_spotmap_image(
                 tile=self._tile_idx,
                 bit=bit_id,
             )
 
             if self._z_crop:
-                # TODO upscale x2 spotiflow heatmap to match data shape
+                # TODO upscale x2 spotmap heatmap to match data shape
                 current_mask = np.asarray(
-                    spotiflow_image[self._z_range[0] : self._z_range[1], :].result(),
+                    spotmap_image[self._z_range[0] : self._z_range[1], :].result(),
                     dtype=np.float32,
                 )
                 images.append(
                     np.where(
-                        current_mask > spotiflow_threshold,
+                        current_mask > spotmap_threshold,
                         np.asarray(
                             decon_image[
                                 self._z_range[0] : self._z_range[1], :
@@ -668,10 +668,10 @@ class PixelDecoder:
                     )
                 )
             else:
-                current_mask = np.asarray(spotiflow_image.result(), dtype=np.float32)
+                current_mask = np.asarray(spotmap_image.result(), dtype=np.float32)
                 images.append(
                     np.where(
-                        current_mask > spotiflow_threshold,
+                        current_mask > spotmap_threshold,
                         np.asarray(decon_image.result(), dtype=np.float32),
                         0,
                     )
@@ -2119,7 +2119,7 @@ class PixelDecoder:
         magnitude_threshold: Optional[float] = 0.9,
         minimum_pixels: Optional[float] = 3.0,
         use_normalization: Optional[bool] = True,
-        spotiflow_threshold: Optional[float] = 0.25,
+        spotmap_threshold: Optional[float] = 0.25,
     ) -> Optional[tuple[np.ndarray, ...]]:
         """Decode one tile.
 
@@ -2143,8 +2143,8 @@ class PixelDecoder:
             Minimum number of pixels for a barcode. 
         use_normalization : Optional[bool], default True
             Use normalization. 
-        spotiflow_threshold : Optional[float], default 0.5
-            spotiflow threshold.
+        spotmap_threshold : Optional[float], default 0.5
+            spotmap threshold.
 
         Returns
         -------
@@ -2163,7 +2163,7 @@ class PixelDecoder:
                 self._load_iterative_normalization_vectors(gpu_id=gpu_id)
 
             self._tile_idx = tile_idx
-            self._load_bit_data(spotiflow_threshold=spotiflow_threshold)
+            self._load_bit_data(spotmap_threshold=spotmap_threshold)
             if not (np.any(lowpass_sigma == 0)):
                 self._lp_filter(sigma=lowpass_sigma,gpu_id=gpu_id)
             self._decode_pixels(
@@ -2201,7 +2201,7 @@ class PixelDecoder:
         n_random_tiles: int = 10,
         n_iterations: int = 10,
         minimum_pixels: float = 3.0,
-        spotiflow_threshold: float = 0.25,
+        spotmap_threshold: float = 0.25,
         lowpass_sigma: Optional[Sequence[float]] = (3, 1, 1),
         magnitude_threshold: Optional[float] = 0.9,
     ):
@@ -2217,8 +2217,8 @@ class PixelDecoder:
             Number of iterations. 
         minimum_pixels : float, default 3.0
             Minimum number of pixels for a barcode. 
-        spotiflow_threshold : float, default 0.1
-            spotiflow threshold. 
+        spotmap_threshold : float, default 0.1
+            spotmap threshold. 
         lowpass_sigma : Optional[Sequence[float]], default (3, 1, 1)
             Lowpass sigma.
         magnitude_threshold: Optional[float, default 0.9
@@ -2271,7 +2271,7 @@ class PixelDecoder:
                         lowpass_sigma,
                         magnitude_threshold,
                         minimum_pixels,
-                        spotiflow_threshold,
+                        spotmap_threshold,
                     ),
                 )
                 p.start()
@@ -2307,7 +2307,7 @@ class PixelDecoder:
         lowpass_sigma: Optional[Sequence[float]] = (3, 1, 1),
         magnitude_threshold: Optional[float] = 0.9,
         minimum_pixels: Optional[float] = 3.0,
-        spotiflow_threshold: Optional[float] = 0.5,
+        spotmap_threshold: Optional[float] = 0.5,
         fdr_target: Optional[float] = 0.05,
     ):
         """Optimize normalization by decoding.
@@ -2322,8 +2322,8 @@ class PixelDecoder:
             Number of iterations. 
         minimum_pixels : float, default 3.0
             Minimum number of pixels for a barcode. 
-        spotiflow_threshold : float, default 0.1
-            spotiflow threshold. 
+        spotmap_threshold : float, default 0.1
+            spotmap threshold. 
         lowpass_sigma : Optional[Sequence[float]], default (3, 1, 1)
             Lowpass sigma.
         magnitude_threshold: Optional[float, default 0.9
@@ -2352,7 +2352,7 @@ class PixelDecoder:
                     lowpass_sigma,
                     magnitude_threshold,
                     minimum_pixels,
-                    spotiflow_threshold,
+                    spotmap_threshold,
                 ),
             )
             p.start()

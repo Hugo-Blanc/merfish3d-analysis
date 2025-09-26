@@ -12,8 +12,8 @@ from pathlib import Path
 def decode_pixels(
     root_path: Path,
     minimum_pixels_per_RNA: int = 9,
-    spotmap_threshold: float = 0.4,
-    magnitude_threshold: float = 1.,
+    spotmap_threshold: float = 0.25,
+    magnitude_threshold: float = 1.5,
     fdr_target: float = .05
 ):
     """Perform pixel decoding.
@@ -42,12 +42,12 @@ def decode_pixels(
         datastore=datastore, 
         use_mask=False, 
         merfish_bits=merfish_bits, 
-        verbose=2
+        verbose=1
     )
 
     decoder.optimize_normalization_by_decoding(
-        n_random_tiles=10,
-        n_iterations=10,
+        n_random_tiles=1,
+        n_iterations=1,
         magnitude_threshold=magnitude_threshold,
         minimum_pixels=minimum_pixels_per_RNA,
         spotmap_threshold=spotmap_threshold
@@ -92,5 +92,5 @@ def decode_pixels(
     
 
 if __name__ == "__main__":
-    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")
+    root_path = Path(r"/home/hblanc01/Data/sparse_16bit_example/sim_acquisition")
     decode_pixels(root_path=root_path)

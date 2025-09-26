@@ -288,7 +288,7 @@ def _apply_bits_on_gpu(
     gpu_id: int = 0
 ):
     """
-    Run the “rigid+optical‐flow→Spotiflow” loop for a subset of bits on a single GPU.
+    Run the “rigid+optical‐flow→spotmap” loop for a subset of bits on a single GPU.
     
     Parameters
     ----------
@@ -311,12 +311,21 @@ def _apply_bits_on_gpu(
     os.environ["ORT_LOG_SEVERITY_LEVEL"] = "3"
     import onnxruntime as ort
     ort.set_default_logger_severity(3)
-    # from ufish.api import UFish
-    from spotiflow.model import Spotiflow 
     from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
     from merfish3danalysis.utils.registration import apply_transform
     from skimage.transform import rescale
     from skimage.exposure import rescale_intensity
+
+    if dr.spot_prediction_model =="UFISH":
+        from ufish.api import UFish
+        use_Spotiflow = False
+    elif dr.spot_prediction_model =="Spotiflow":
+        from spotiflow.model import Spotiflow
+        use_Spotiflow = True
+    else:
+        print(f"Spot prediction model {dr.spot_prediction_model} is not recognized. Using default Spotiflow.")
+        from spotiflow.model import Spotiflow
+        use_Spotiflow = True
 
     for bit_id in bit_list:
 
@@ -378,20 +387,34 @@ def _apply_bits_on_gpu(
             # clip to uint16
             data_reg = data_reg.clip(0,2**16-1).astype(np.uint16)
 
-            # Spotiflow
-            spotiflow = Spotiflow.from_folder("/home/hblanc01/.spotiflow/models/synth_3d_grid_1", map_location='cuda')
-            spot_loc, spotiflow_details  = spotiflow.predict(data_reg, subpix=True, exclude_border=True, verbose=True)
-            spotiflow_loc = pd.DataFrame(list(zip(list(spot_loc[:, 0]), list(spot_loc[:, 1]), list(spot_loc[:, 2]))), columns=["z", "y", "x"])
-            spotiflow_heatmap = rescale_intensity(spotiflow_details.flow[...,0], in_range=(-1,1), out_range=(0,1))
-            # spotiflow_heatmap = spotiflow_details.heatmap
-            del spotiflow, spot_loc
-            gc.collect()
+            # Spotmap
+            if use_Spotiflow:
+                # TODO: Add path to model in dr init
+                spotiflow = Spotiflow.from_folder("/home/hblanc01/.spotiflow/models/synth_3d_grid_1", map_location='cuda')
+                spot_loc, spotiflow_details  = spotiflow.predict(data_reg, subpix=True, exclude_border=True, verbose=True)
+                spotmap_loc = pd.DataFrame(list(zip(list(spot_loc[:, 0]), list(spot_loc[:, 1]), list(spot_loc[:, 2]))), columns=["z", "y", "x"])
+                # Use the vw component of the stereographic flow output of Spotiflow as spot prediction heatmap, and rescale it to [0,1].
+                spotmap_heatmap = rescale_intensity(spotiflow_details.flow[...,0], in_range=(-1,1), out_range=(0,1))
+                del spotiflow, spot_loc, spotiflow_details
+                gc.collect()
+            else:
+                # UFISH
+                ufish = UFish(device=f"cuda:{gpu_id}")
+                ufish.load_weights_from_internet()
+                spotmap_loc, spotmap_heatmap = ufish.predict(
+                    data_reg, axes="zyx", blend_3d=False, batch_size=1
+                )
+                spotmap_loc = spotmap_loc.rename(
+                    columns={"axis-0": "z", "axis-1": "y", "axis-2": "x"}
+                )
+                del ufish
+                gc.collect()
 
             torch.cuda.empty_cache()
             cp.get_default_memory_pool().free_all_blocks()
             gc.collect()
 
-            # Spotiflow ROI sums
+            # spotmap ROI sums
             roi_z, roi_y, roi_x = 7, 5, 5
 
             def sum_pixels_in_roi(row, image, roi_dims):
@@ -405,30 +428,29 @@ def _apply_bits_on_gpu(
                 xmax = min(image.shape[2], xmin + rx)
                 roi = image[int(zmin):int(zmax), int(ymin):int(ymax), int(xmin):int(xmax)]
                 return np.sum(roi)
-
-            # Output spotiflow probability map is downsampled by 2 
-            spotiflow_loc["sum_prob_pixels"] = spotiflow_loc.apply(
-                sum_pixels_in_roi, axis=1, image=spotiflow_heatmap, roi_dims=(roi_z, roi_y, roi_x)
+ 
+            spotmap_loc["sum_prob_pixels"] = spotmap_loc.apply(
+                sum_pixels_in_roi, axis=1, image=spotmap_heatmap, roi_dims=(roi_z, roi_y, roi_x)
             )
-            spotiflow_loc["sum_decon_pixels"] = spotiflow_loc.apply(
+            spotmap_loc["sum_decon_pixels"] = spotmap_loc.apply(
                 sum_pixels_in_roi, axis=1, image=data_reg, roi_dims=(roi_z, roi_y, roi_x)
             )
 
-            spotiflow_loc["tile_idx"] = dr._tile_ids.index(dr._tile_id)
-            spotiflow_loc["bit_idx"] = dr._bit_ids.index(bit_id) + 1
-            spotiflow_loc["tile_z_px"] = spotiflow_loc["z"]
-            spotiflow_loc["tile_y_px"] = spotiflow_loc["y"]
-            spotiflow_loc["tile_x_px"] = spotiflow_loc["x"]
+            spotmap_loc["tile_idx"] = dr._tile_ids.index(dr._tile_id)
+            spotmap_loc["bit_idx"] = dr._bit_ids.index(bit_id) + 1
+            spotmap_loc["tile_z_px"] = spotmap_loc["z"]
+            spotmap_loc["tile_y_px"] = spotmap_loc["y"]
+            spotmap_loc["tile_x_px"] = spotmap_loc["x"]
 
             # save results
             dr._datastore.save_local_registered_image(
                 data_reg, tile=dr._tile_id, deconvolution=True, bit=bit_id
             )
-            dr._datastore.save_local_spotiflow_image(spotiflow_heatmap, tile=dr._tile_id, bit=bit_id)
-            dr._datastore.save_local_spotiflow_spots(spotiflow_loc, tile=dr._tile_id, bit=bit_id)
+            dr._datastore.save_local_spotmap_image(spotmap_heatmap, tile=dr._tile_id, bit=bit_id)
+            dr._datastore.save_local_spotmap_spots(spotmap_loc, tile=dr._tile_id, bit=bit_id)
             print(time_stamp(), f"GPU {gpu_id}: finished readout tile id: {dr._tile_id}; bit id: {bit_id}.")
 
-            del data_reg, spotiflow_details, spotiflow_loc
+            del data_reg, spotmap_loc
             gc.collect()
 
     return True
@@ -464,7 +486,8 @@ class DataRegistration:
         perform_optical_flow: bool = True,
         save_all_polyDT_registered: bool = True,
         num_gpus: int = 1,
-        crop_yx_decon: int = 1024
+        crop_yx_decon: int = 1024,
+        spot_prediction_model: str = "Spotiflow"
     ):
         self._datastore = datastore
         self._tile_ids = self._datastore.tile_ids
@@ -481,6 +504,7 @@ class DataRegistration:
         self._overwrite_registered = overwrite_registered
         self.save_all_polyDT_registered = save_all_polyDT_registered
         self._original_print = builtins.print
+        self.spot_prediction_model = spot_prediction_model
 
     # -----------------------------------
     # property access for class variables
@@ -694,7 +718,7 @@ class DataRegistration:
             p.join()
 
     def _apply_registration_to_bits(self):
-        """Generate spotiflow + deconvolved, registered readout data and save to datastore."""
+        """Generate spotmap + deconvolved, registered readout data and save to datastore."""
         # 1) How many GPUs do we have?
         if self._num_gpus == 0:
             raise RuntimeError("No GPUs detected. Cannot run _apply_registration_to_bits().")

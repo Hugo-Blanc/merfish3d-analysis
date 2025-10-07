@@ -25,24 +25,25 @@ import numpy as np
 import pandas as pd
 from psfmodels import make_psf
 from tifffile import imread
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from merfish3danalysis.utils.dataio import read_metadatafile
-from merfish3danalysis.utils.imageprocessing import replace_hot_pixels, estimate_shading, no_op
 from itertools import compress
-from typing import Optional
-import gc
-import builtins
+import typer
 
+app = typer.Typer()
+app.pretty_exceptions_enable = False
+
+@app.command()
 def convert_data(
     root_path: Path,
-    baysor_binary_path: Path,
-    baysor_options_path: Path,
-    julia_threads: int,
-    channel_names: Optional[list[str]] = ["alexa488", "atto565", "alexa647"],
-    hot_pixel_image_path: Optional[Path] = None,
-    output_path: Optional[Path] = None,
-    codebook_path: Optional[Path] = None,
-    bit_order_path: Optional[Path] = None,
+    baysor_binary_path: str = r"/path/to/baysor",
+    baysor_options_path: str = r"/path/to/baysor_options.toml",
+    julia_threads: int = 20,
+    channel_names: list[str] = ["alexa488", "atto565", "alexa647"],
+    hot_pixel_image_path: Path = None,
+    output_path: Path = None,
+    codebook_path: Path = None,
+    bit_order_path: Path = None,
 ):
     """Convert qi2lab microscope data to qi2lab datastore.
 
@@ -255,20 +256,21 @@ def convert_data(
             raw_image = imread(image_path)
             if tile_idx == 0 and round_idx == 0:
                 correct_shape = raw_image.shape
-            if raw_image is None or raw_image.shape != correct_shape:
-                if raw_image.shape[0] < correct_shape[0]:
-                    print("\nround=" + str(round_idx + 1) + "; tile=" + str(tile_idx + 1))
-                    print("Found shape: " + str(raw_image.shape))
-                    print("Correct shape: " + str(correct_shape))
-                    print("Replacing data with zeros.\n")
-                    raw_image = np.zeros(correct_shape, dtype=np.uint16)
-                else:                    
-                    # print("\nround=" + str(round_idx + 1) + "; tile=" + str(tile_idx + 1))
-                    # print("Found shape: " + str(raw_image.shape))
-                    size_to_trim = raw_image.shape[1] - correct_shape[1]
-                    raw_image = raw_image[:,size_to_trim:,:].copy()
-                    # print("Correct shape: " + str(correct_shape))
-                    # print("Corrected to shape: " + str(raw_image.shape) + "\n")
+            else:
+                if raw_image is None or raw_image.shape != correct_shape:
+                    if raw_image.shape[0] < correct_shape[0]:
+                        print("\nround=" + str(round_idx + 1) + "; tile=" + str(tile_idx + 1))
+                        print("Found shape: " + str(raw_image.shape))
+                        print("Correct shape: " + str(correct_shape))
+                        print("Replacing data with zeros.\n")
+                        raw_image = np.zeros(correct_shape, dtype=np.uint16)
+                    else:                    
+                        # print("\nround=" + str(round_idx + 1) + "; tile=" + str(tile_idx + 1))
+                        # print("Found shape: " + str(raw_image.shape))
+                        size_to_trim = raw_image.shape[1] - correct_shape[1]
+                        raw_image = raw_image[:,size_to_trim:,:].copy()
+                        # print("Correct shape: " + str(correct_shape))
+                        # print("Corrected to shape: " + str(raw_image.shape) + "\n")
 
             # Correct if channels were acquired in reverse order (red->purple)
             if channel_order == "reversed":
@@ -355,17 +357,8 @@ def convert_data(
     datastore_state.update({"Corrected": True})
     datastore.datastore_state = datastore_state
 
-if __name__ == "__main__":
-    root_path = Path(r"/home/hblanc01/Data/fake_cells_16bit_example/sim_acquisition")
-    baysor_binary_path = None
-    baysor_options_path = None
-    julia_threads = 20
-    hot_pixel_image_path = None
+def main():
+    app()
 
-    convert_data(
-        root_path=root_path,
-        baysor_binary_path=baysor_binary_path,
-        baysor_options_path=baysor_options_path,
-        julia_threads=julia_threads,
-        hot_pixel_image_path=hot_pixel_image_path
-    )
+if __name__ == "__main__":
+    main()

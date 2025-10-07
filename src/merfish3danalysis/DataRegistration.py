@@ -57,7 +57,8 @@ def _apply_first_polyDT_on_gpu(
     import io
     import contextlib
     import os
-    cp.cuda.Device(0).use()
+    cp.cuda.Device(gpu_id).use()
+    from merfish3danalysis.utils.rlgc import chunked_rlgc
 
 
     raw0 = dr._datastore.load_local_corrected_image(
@@ -72,7 +73,7 @@ def _apply_first_polyDT_on_gpu(
         deconvolution=True,
         round=dr._round_ids[0]
     )
-    print(time_stamp(), f"GPU {gpu_id}: finished polyDT tile id: {dr._tile_id}; round id: round001.")
+    print(time_stamp(), f"Finished polyDT tile id: {dr._tile_id}; round id: round001.")
 
     del raw0
     gc.collect()
@@ -257,7 +258,7 @@ def _apply_polyDT_on_gpu(
                         deconvolution=True,
                         round=round_id
                     )
-                print(time_stamp(), f"GPU {gpu_id}: finished polyDT tile id: {dr._tile_id}; round id: {round_id}.")
+                print(time_stamp(), f"Finished polyDT tile id: {dr._tile_id}; round id: {round_id}.")
 
                 del data_registered
                 gc.collect()
@@ -448,7 +449,7 @@ def _apply_bits_on_gpu(
             )
             dr._datastore.save_local_spotmap_image(spotmap_heatmap, tile=dr._tile_id, bit=bit_id)
             dr._datastore.save_local_spotmap_spots(spotmap_loc, tile=dr._tile_id, bit=bit_id)
-            print(time_stamp(), f"GPU {gpu_id}: finished readout tile id: {dr._tile_id}; bit id: {bit_id}.")
+            print(time_stamp(), f"Finished readout tile id: {dr._tile_id}; bit id: {bit_id}.")
 
             del data_reg, spotmap_loc
             gc.collect()

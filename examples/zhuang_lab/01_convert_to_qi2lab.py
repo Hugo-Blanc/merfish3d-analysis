@@ -110,7 +110,7 @@ def convert_data(
     # generate 2D PSFs for each channel from metadata
     psfs = []
     for psf_idx in range(3):
-        psf = make_psf(z=1, nx=51, dxy=voxel_zyx_um[1], NA=na, ni=ri)
+        psf = make_psf(z=1, nx=51, dxy=voxel_zyx_um[1], NA=na, ni=ri, wvl=wavelengths_um[psf_idx,1])
         psf = psf / np.sum(psf, axis=(0, 1))
         psfs.append(psf)
     psfs = np.asarray(psfs, dtype=np.float32)
@@ -153,6 +153,13 @@ def convert_data(
     raw_images_files_path = root_path / Path("mouse1_sample1_raw")
     raw_image_files = natsorted(list(raw_images_files_path.glob("*.tif")))
 
+    affine_zyx_px = np.array([
+        [1,0,0,0],
+        [0,1,0,0],
+        [0,0,1,0],
+        [0,0,0,1]
+    ],dtype=np.float32) 
+
     raw_image_tile_idx = [24,25,26,27,37,38,39,40,45,46,47,48,53,54,55,56]
     
     # for tile_idx, raw_image_file in enumerate(tqdm(raw_image_files,desc="tile")):
@@ -193,7 +200,9 @@ def convert_data(
                 round=round_id,
             )
             datastore.save_local_stage_position_zyx_um(
-                stage_positions[tile_idx, :], np.eye(4), tile=tile_idx, round=round_id
+                stage_positions[tile_idx, :], 
+                affine_zyx_px,
+                tile=tile_idx, round=round_id
             )
             datastore.save_local_wavelengths_um(
                 (wavelengths_um[psf_idx, 0],wavelengths_um[psf_idx, 1]), 
@@ -231,7 +240,7 @@ def convert_data(
     datastore.datastore_state = datastore_state
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/e/Data/Zhuang_lab_dataset/mop")
+    root_path = Path(r"/mnt/data/zhuang/mop/mouse_sample1_raw/")
     baysor_binary_path = Path(
         r"/home/qi2lab/Documents/github/Baysor/bin/baysor/bin/./baysor"
     )

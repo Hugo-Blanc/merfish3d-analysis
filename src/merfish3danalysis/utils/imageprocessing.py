@@ -16,7 +16,7 @@ import gc
 from numpy.typing import ArrayLike
 from numba import njit, prange
 import builtins
-from basicpy import BaSiC
+# from basicpy import BaSiC
 from tqdm import tqdm 
 
 
@@ -69,53 +69,53 @@ def replace_hot_pixels(
 
     return data
 
-def estimate_shading(
-    images: list[ArrayLike]
-) -> ArrayLike:
-    """Estimate shading using stack of images and BaSiCPy.
+# def estimate_shading(
+#     images: list[ArrayLike]
+# ) -> ArrayLike:
+#     """Estimate shading using stack of images and BaSiCPy.
     
-    Parameters
-    ----------
-    images: ArrayLike
-        4D image stack [p,z,y,x]
+#     Parameters
+#     ----------
+#     images: ArrayLike
+#         4D image stack [p,z,y,x]
         
-    Returns
-    -------
-    shading_image: ArrayLike
-        estimated shading image
-    """
+#     Returns
+#     -------
+#     shading_image: ArrayLike
+#         estimated shading image
+#     """
 
-    # GPU
+#     # GPU
 
-    import cupy as cp  # type: ignore
-    from cupyx.scipy import ndimage  # type: ignore
+#     import cupy as cp  # type: ignore
+#     from cupyx.scipy import ndimage  # type: ignore
 
-    maxz_images = []
-    for image in images:
-        maxz_images.append(cp.squeeze(cp.max(image.result(),axis=0)))    
+#     maxz_images = []
+#     for image in images:
+#         maxz_images.append(cp.squeeze(cp.max(image.result(),axis=0)))    
 
-    maxz_images = cp.asnumpy(maxz_images).astype(np.uint16)
-    gc.collect()
-    cp.cuda.Stream.null.synchronize()
-    cp.get_default_memory_pool().free_all_blocks()
-    cp.get_default_pinned_memory_pool().free_all_blocks()
+#     maxz_images = cp.asnumpy(maxz_images).astype(np.uint16)
+#     gc.collect()
+#     cp.cuda.Stream.null.synchronize()
+#     cp.get_default_memory_pool().free_all_blocks()
+#     cp.get_default_pinned_memory_pool().free_all_blocks()
 
-    original_print = builtins.print
-    builtins.print = no_op
-    basic = BaSiC(get_darkfield=False)
-    basic.autotune(maxz_images[:])
-    basic.fit(maxz_images[:])
-    builtins.print = original_print
-    shading_correction = basic.flatfield.astype(np.float32) / np.max(basic.flatfield.astype(np.float32),axis=(0,1))
+#     original_print = builtins.print
+#     builtins.print = no_op
+#     basic = BaSiC(get_darkfield=False)
+#     basic.autotune(maxz_images[:])
+#     basic.fit(maxz_images[:])
+#     builtins.print = original_print
+#     shading_correction = basic.flatfield.astype(np.float32) / np.max(basic.flatfield.astype(np.float32),axis=(0,1))
     
-    del basic
-    gc.collect()
+#     del basic
+#     gc.collect()
 
-    cp.cuda.Stream.null.synchronize()
-    cp.get_default_memory_pool().free_all_blocks()
-    cp.get_default_pinned_memory_pool().free_all_blocks()
+#     cp.cuda.Stream.null.synchronize()
+#     cp.get_default_memory_pool().free_all_blocks()
+#     cp.get_default_pinned_memory_pool().free_all_blocks()
     
-    return shading_correction
+#     return shading_correction
 
 def downsample_image_anisotropic(image: ArrayLike, level: tuple[int,int,int] = (2,6,6)) -> ArrayLike:
     """Numba accelerated anisotropic downsampling

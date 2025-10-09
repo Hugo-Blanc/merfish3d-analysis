@@ -131,3 +131,6 @@ examples/statphysbio_synthetic/test.ipynb
 examples/igfl_abberior/test_convert_to_datastore.ipynb
 examples/igfl_abberior/test_convert_to_datastore.ipynb
 profile.svg
+
+# Jupyter Notebook
+.ipynb_checkpoints

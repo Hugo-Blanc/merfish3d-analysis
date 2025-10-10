@@ -404,7 +404,7 @@ def _apply_bits_on_gpu(
                 spotiflow = Spotiflow.from_folder(
                     "/home/hblanc01/.spotiflow/models/synth_3d_grid_1", map_location='cuda')
                 spot_loc, spotiflow_details = spotiflow.predict(
-                    data_reg, subpix=True, exclude_border=True, verbose=True)
+                    data_reg, subpix=True, exclude_border=True, verbose=False)
                 spotmap_loc = pd.DataFrame(list(zip(list(spot_loc[:, 0]), list(
                     spot_loc[:, 1]), list(spot_loc[:, 2]))), columns=["z", "y", "x"])
                 # Use the vw component of the stereographic flow output of Spotiflow as spot prediction heatmap, and rescale it to [0,1].

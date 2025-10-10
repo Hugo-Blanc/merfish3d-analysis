@@ -10,12 +10,12 @@ from merfish3danalysis.DataRegistration import DataRegistration
 from pathlib import Path
 import numpy as np
 from tifffile import TiffWriter
-from typing import Optional
+from typing import Optional, Literal
 from tqdm import tqdm
 import gc
 
 
-def local_register_data(datastore_path: Path):
+def local_register_data(datastore_path: Path, spot_prediction_model: Literal["Spotiflow", "UFISH"] = "Spotiflow"):
     """Register each tile across rounds in local coordinates.
 
     Parameters
@@ -34,7 +34,7 @@ def local_register_data(datastore_path: Path):
         perform_optical_flow=False,
         overwrite_registered=True,
         save_all_polyDT_registered=False,
-        spot_prediction_model="Spotiflow",
+        spot_prediction_model=spot_prediction_model,
     )
 
     # Temp : don't use the imagej part of rlgc

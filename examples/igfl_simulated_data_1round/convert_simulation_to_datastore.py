@@ -72,7 +72,7 @@ def convert_simulation(
         -1*yx_pixel_um*(simulation_data.shape[-2]//2),
         -1*yx_pixel_um*(simulation_data.shape[-1]//2)
     ]
-    fake_tile_id = 0  # TODO change with Img ID
+    fake_tile_id = 0
     round_id = 1
 
     # create sim files folder
@@ -113,7 +113,7 @@ def convert_simulation(
 
     em_wavelengths_um = [float(wl)
                          for wl in channels_wl]  # selected by channel IDs
-    # TODO check if it's necessary to fetech real ex wl values
+    # TODO check if it's necessary to fetch real ex wl values
     ex_wavelengths_um = em_wavelengths_um
     noise_map = None
     affine_zyx_px = np.array([

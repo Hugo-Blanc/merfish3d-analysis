@@ -62,7 +62,7 @@ def convert_simulation(
     img_paths.sort()
 
     # reshape simulation to match experimental design
-    img_idx = 0
+    img_idx = 5
     simulation_data = np.swapaxes(imread(img_paths[img_idx]), 0, 1)
     print(img_paths[img_idx])
     root_name = img_paths[img_idx].stem
@@ -90,7 +90,7 @@ def convert_simulation(
 
     # copy codebook and load file to simulated acquisition folder
     sim_codebook_path = root_path / Path(f"{metadata["codebook_name"]}.csv")
-    codebook = pd.read_csv(sim_codebook_path)
+    codebook = pd.read_csv(sim_codebook_path, sep=";")
 
     # copy load bit_order file to simulated acquisition folder
     sim_acq_bitorder_path = simufiles_folder / Path("bit_order.csv")

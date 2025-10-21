@@ -16,13 +16,11 @@ import gc
 from numpy.typing import ArrayLike
 from numba import njit, prange
 import builtins
-# from basicpy import BaSiC
-from tqdm import tqdm 
 
 
 def replace_hot_pixels(
-    noise_map: ArrayLike, 
-    data: ArrayLike, 
+    noise_map: ArrayLike,
+    data: ArrayLike,
     threshold: float = 375.0
 ) -> ArrayLike:
     """Replace hot pixels with median values surrounding them.
@@ -57,7 +55,8 @@ def replace_hot_pixels(
     data = cp.asarray(data, dtype=cp.float32)
     for z_idx in range(data.shape[0]):
         median = ndimage.median_filter(data[z_idx, :, :], size=3)
-        data[z_idx, :] = inverted_hot_pixels * data[z_idx, :] + hot_pixels * median
+        data[z_idx, :] = inverted_hot_pixels * \
+            data[z_idx, :] + hot_pixels * median
 
     data[data < 0] = 0
 
@@ -73,12 +72,12 @@ def replace_hot_pixels(
 #     images: list[ArrayLike]
 # ) -> ArrayLike:
 #     """Estimate shading using stack of images and BaSiCPy.
-    
+
 #     Parameters
 #     ----------
 #     images: ArrayLike
 #         4D image stack [p,z,y,x]
-        
+
 #     Returns
 #     -------
 #     shading_image: ArrayLike
@@ -87,12 +86,13 @@ def replace_hot_pixels(
 
 #     # GPU
 
-#     import cupy as cp  # type: ignore
-#     from cupyx.scipy import ndimage  # type: ignore
+    import cupy as cp  # type: ignore
+    from cupyx.scipy import ndimage  # type: ignore
+    from basicpy import BaSiC  # type: ignore
 
 #     maxz_images = []
 #     for image in images:
-#         maxz_images.append(cp.squeeze(cp.max(image.result(),axis=0)))    
+#         maxz_images.append(cp.squeeze(cp.max(image.result(),axis=0)))
 
 #     maxz_images = cp.asnumpy(maxz_images).astype(np.uint16)
 #     gc.collect()
@@ -107,17 +107,18 @@ def replace_hot_pixels(
 #     basic.fit(maxz_images[:])
 #     builtins.print = original_print
 #     shading_correction = basic.flatfield.astype(np.float32) / np.max(basic.flatfield.astype(np.float32),axis=(0,1))
-    
+
 #     del basic
 #     gc.collect()
 
 #     cp.cuda.Stream.null.synchronize()
 #     cp.get_default_memory_pool().free_all_blocks()
 #     cp.get_default_pinned_memory_pool().free_all_blocks()
-    
+
 #     return shading_correction
 
-def downsample_image_anisotropic(image: ArrayLike, level: tuple[int,int,int] = (2,6,6)) -> ArrayLike:
+
+def downsample_image_anisotropic(image: ArrayLike, level: tuple[int, int, int] = (2, 6, 6)) -> ArrayLike:
     """Numba accelerated anisotropic downsampling
 
     Parameters
@@ -134,7 +135,8 @@ def downsample_image_anisotropic(image: ArrayLike, level: tuple[int,int,int] = (
     """
 
     downsampled_image = downsample_axis(
-        downsample_axis(downsample_axis(image, level[0], 0), level[1], 1), level[2], 2
+        downsample_axis(downsample_axis(
+            image, level[0], 0), level[1], 1), level[2], 2
     )
 
     return downsampled_image
@@ -142,8 +144,8 @@ def downsample_image_anisotropic(image: ArrayLike, level: tuple[int,int,int] = (
 
 @njit(parallel=True)
 def downsample_axis(
-    image: ArrayLike, 
-    level: int = 2, 
+    image: ArrayLike,
+    level: int = 2,
     axis: int = 0
 ) -> ArrayLike:
     """Numba accelerated downsampling for 3D images along a specified axis.
@@ -164,7 +166,8 @@ def downsample_axis(
 
     """
     if axis == 0:
-        new_length = image.shape[0] // level + (1 if image.shape[0] % level != 0 else 0)
+        new_length = image.shape[0] // level + \
+            (1 if image.shape[0] % level != 0 else 0)
         downsampled_image = np.zeros(
             (new_length, image.shape[1], image.shape[2]), dtype=image.dtype
         )
@@ -183,7 +186,8 @@ def downsample_axis(
                         downsampled_image[z, y, x] = sum_value / count
 
     elif axis == 1:
-        new_length = image.shape[1] // level + (1 if image.shape[1] % level != 0 else 0)
+        new_length = image.shape[1] // level + \
+            (1 if image.shape[1] % level != 0 else 0)
         downsampled_image = np.zeros(
             (image.shape[0], new_length, image.shape[2]), dtype=image.dtype
         )
@@ -202,7 +206,8 @@ def downsample_axis(
                         downsampled_image[z, y, x] = sum_value / count
 
     elif axis == 2:
-        new_length = image.shape[2] // level + (1 if image.shape[2] % level != 0 else 0)
+        new_length = image.shape[2] // level + \
+            (1 if image.shape[2] % level != 0 else 0)
         downsampled_image = np.zeros(
             (image.shape[0], image.shape[1], new_length), dtype=image.dtype
         )
@@ -222,9 +227,10 @@ def downsample_axis(
 
     return downsampled_image
 
+
 def no_op(*args, **kwargs):
     """Function to monkey patch print to suppress output.
-    
+
     Parameters
     ----------
     args: Any
@@ -232,5 +238,5 @@ def no_op(*args, **kwargs):
     kwargs: Any
         keyword arguments
     """
-    
+
     pass

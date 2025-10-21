@@ -505,7 +505,7 @@ class DataRegistration:
         bkd_subtract_polyDT: bool = True,
         overwrite_registered: bool = False,
         perform_optical_flow: bool = True,
-        save_all_polyDT_registered: bool = True,
+        save_all_polyDT_registered: bool = False,
         num_gpus: int = 1,
         crop_yx_decon: int = 1024,
         spot_prediction_model: str = "Spotiflow"

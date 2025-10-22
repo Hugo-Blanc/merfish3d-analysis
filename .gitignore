@@ -128,3 +128,6 @@ test_pixeldecode.py
 test_round_alignment.py
 output.mp4
 3.0.8
+
+# Jupyter Notebook
+.ipynb_checkpoints

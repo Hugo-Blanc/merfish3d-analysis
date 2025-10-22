@@ -18,6 +18,78 @@ from tifffile import imread
 from tqdm import tqdm
 from natsort import natsorted
 from typing import Optional
+from dask.distributed import Client
+from dask.distributed import fire_and_forget
+
+def init_load_and_correct(datastore, tile_idx, raw_file, offset, e_per_ADU): 
+    datastore.initialize_tile(tile_idx)
+    # load raw image
+    # some Zhuang tif files appear to be corrupted when downloaded with wget, 
+    # so we catch those errors and notify user.
+    try:
+        raw_image = imread(raw_file).astype(np.uint16)
+        good_shape = raw_image.shape
+    except Exception:
+        print("Error reading: " + raw_file  + "; Please re-download")
+        raw_image = np.zeros((good_shape),dtype=np.uint16)
+            
+    # Correct for gain and offset
+    raw_image = (raw_image).astype(np.float32) - offset
+    raw_image[raw_image<0.] = 0.
+    raw_image = (raw_image * e_per_ADU).astype(np.uint16)
+    return raw_image
+
+def write_to_qi2labdatastore(datastore,raw_image,tile_idx, stage_positions, wavelengths_um):
+    # write fidicual data first.
+    # Write the same polyDT for each round, as the data is already locally registered.
+    # The metadata tells us polyDT is the 39th entry
+    # The Zhuang data is both transposed and flipped, which we fix when writing the data
+    psf_idx = 0
+    for round_idx, round_id in enumerate(tqdm(datastore.round_ids,desc="round",leave=False)):
+        datastore.save_local_corrected_image(
+            np.squeeze(np.swapaxes(raw_image[38,:],1,2)),
+            tile=tile_idx,
+            psf_idx=psf_idx,
+            gain_correction=True,
+            hotpixel_correction=False,
+            shading_correction=False,
+            round=round_id,
+        )
+        datastore.save_local_stage_position_zyx_um(
+            stage_positions[tile_idx, :], np.ones((4,4)), tile=tile_idx, round=round_id
+        )
+        datastore.save_local_wavelengths_um(
+            (wavelengths_um[psf_idx, 0],wavelengths_um[psf_idx, 1]), 
+            tile=tile_idx, 
+            round=round_id
+        )
+
+    # write all readouts
+    # The bits go in order of the codebook
+    # The Zhuang data is both transposed and flipped, which we fix when writing the data
+    psf_idx = 1
+    for bit_idx, bit_id in enumerate(tqdm(datastore.bit_ids,desc="bit",leave=False)):
+        datastore.save_local_corrected_image(
+            np.squeeze(np.swapaxes(raw_image[bit_idx, :],1,2)),
+            tile=tile_idx,
+            psf_idx=psf_idx,
+            gain_correction=True,
+            hotpixel_correction=False,
+            shading_correction=False,
+            bit=bit_id,
+        )
+        datastore.save_local_wavelengths_um(
+            (wavelengths_um[psf_idx, 0], wavelengths_um[psf_idx, 1]),
+            tile=tile_idx,
+            bit=bit_idx,
+        )
+        if psf_idx == 2:
+            psf_idx = 1
+        else:
+            psf_idx = 2
+            
+    return True
+
 
 def convert_data(
     root_path: Path,
@@ -57,6 +129,8 @@ def convert_data(
         imaging round, in channel order. Default of `None` assumes
         the file is in the root_path.
     """
+    # Initialize local dask client 
+    client = Client() 
     
     # codebook
     codebook = pd.read_csv(codebook_path)
@@ -110,7 +184,7 @@ def convert_data(
     # generate 2D PSFs for each channel from metadata
     psfs = []
     for psf_idx in range(3):
-        psf = make_psf(z=1, nx=51, dxy=voxel_zyx_um[1], NA=na, ni=ri, wvl=wavelengths_um[psf_idx,1])
+        psf = make_psf(z=1, nx=51, dxy=voxel_zyx_um[1], NA=na, ni=ri)
         psf = psf / np.sum(psf, axis=(0, 1))
         psfs.append(psf)
     psfs = np.asarray(psfs, dtype=np.float32)
@@ -153,94 +227,22 @@ def convert_data(
     raw_images_files_path = root_path / Path("mouse1_sample1_raw")
     raw_image_files = natsorted(list(raw_images_files_path.glob("*.tif")))
 
-    affine_zyx_px = np.array([
-        [1,0,0,0],
-        [0,1,0,0],
-        [0,0,1,0],
-        [0,0,0,1]
-    ],dtype=np.float32) 
-
-    raw_image_tile_idx = [24,25,26,27,37,38,39,40,45,46,47,48,53,54,55,56]
-    
-    # for tile_idx, raw_image_file in enumerate(tqdm(raw_image_files,desc="tile")):
-    for tile_idx in tqdm(raw_image_tile_idx,desc="tile"):
+    futures = []
+    for tile_idx, raw_image_file in enumerate(tqdm(raw_image_files,desc="tile")):
         # initialize datastore tile
         # this creates the directory structure and links fiducial rounds <-> readout bits
-        datastore.initialize_tile(tile_idx)
-        raw_image_file = raw_images_files_path / Path(f"aligned_images{tile_idx}.tif")
+        raw_image = client.submit(init_load_and_correct, datastore, tile_idx, raw_image_file, offset, e_per_ADU)
+        future =  client.submit(write_to_qi2labdatastore, datastore,raw_image,tile_idx, stage_positions, wavelengths_um)
+        futures.append(future)
         
-        # load raw image
-        # some Zhuang tif files appear to be corrupted when downloaded with wget, 
-        # so we catch those errors and notify user.
-        try:
-            raw_image = imread(raw_image_file).astype(np.uint16)
-            good_shape = raw_image.shape
-        except Exception:
-            print("Error reading: " + raw_image_file  + "; Please re-download")
-            raw_image = np.zeros((good_shape),dtype=np.uint16)
-                
-        # Correct for gain and offset
-        raw_image = (raw_image).astype(np.float32) - offset
-        raw_image[raw_image<0.] = 0.
-        raw_image = (raw_image * e_per_ADU).astype(np.uint16)
-        
-        # write fidicual data first.
-        # Write the same polyDT for each round, as the data is already locally registered.
-        # The metadata tells us polyDT is the 39th entry
-        # The Zhuang data is both transposed and flipped, which we fix when writing the data
-        psf_idx = 0
-        for round_idx, round_id in enumerate(tqdm(datastore.round_ids,desc="round",leave=False)):
-            datastore.save_local_corrected_image(
-                np.squeeze(np.swapaxes(raw_image[38,:],1,2)),
-                tile=tile_idx,
-                psf_idx=psf_idx,
-                gain_correction=True,
-                hotpixel_correction=False,
-                shading_correction=False,
-                round=round_id,
-            )
-            datastore.save_local_stage_position_zyx_um(
-                stage_positions[tile_idx, :], 
-                affine_zyx_px,
-                tile=tile_idx, round=round_id
-            )
-            datastore.save_local_wavelengths_um(
-                (wavelengths_um[psf_idx, 0],wavelengths_um[psf_idx, 1]), 
-                tile=tile_idx, 
-                round=round_id
-            )
-
-        # write all readouts
-        # The bits go in order of the codebook
-        # The Zhuang data is both transposed and flipped, which we fix when writing the data
-        psf_idx = 1
-        for bit_idx, bit_id in enumerate(tqdm(datastore.bit_ids,desc="bit",leave=False)):
-            datastore.save_local_corrected_image(
-                np.squeeze(np.swapaxes(raw_image[bit_idx, :],1,2)),
-                tile=tile_idx,
-                psf_idx=psf_idx,
-                gain_correction=True,
-                hotpixel_correction=False,
-                shading_correction=False,
-                bit=bit_id,
-            )
-            datastore.save_local_wavelengths_um(
-                (wavelengths_um[psf_idx, 0], wavelengths_um[psf_idx, 1]),
-                tile=tile_idx,
-                bit=bit_idx,
-            )
-            if psf_idx == 2:
-                psf_idx = 1
-            else:
-                psf_idx = 2
-
+    results = client.gather(futures) 
     # update datastore state that "corrected_data" is complete
     datastore_state = datastore.datastore_state
     datastore_state.update({"Corrected": True})
     datastore.datastore_state = datastore_state
 
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data/zhuang/mop/mouse_sample1_raw/")
+    root_path = Path(r"/mnt/e/Data/Zhuang_lab_dataset/mop")
     baysor_binary_path = Path(
         r"/home/qi2lab/Documents/github/Baysor/bin/baysor/bin/./baysor"
     )

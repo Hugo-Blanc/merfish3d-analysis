@@ -86,5 +86,5 @@ def decode_pixels(
         datastore.save_mtx()
 
 if __name__ == "__main__":
-    root_path = Path(r"/media/dps/data/zhuang")
-    decode_pixels(root_path=root_path,run_baysor=False)
+    root_path = Path(r"/mnt/e/Data")
+    pixeldecode_and_baysor(root_path=root_path,run_baysor=False,fdr_target=.05)

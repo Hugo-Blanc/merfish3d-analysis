@@ -10,20 +10,12 @@ from merfish3danalysis.DataRegistration import DataRegistration
 from pathlib import Path
 import numpy as np
 from tifffile import TiffWriter
-from typing import Optional
-import typer
-
-app = typer.Typer()
-app.pretty_exceptions_enable = False
+from typing import Optional, Literal
+from tqdm import tqdm
+import gc
 
 
-@app.command()
-def manage_data_registration_states(root_path: Path):
-    local_register_data(root_path)
-    global_register_data(root_path, create_max_proj_tiff=False)
-
-
-def local_register_data(root_path: Path):
+def local_register_data(datastore_path: Path, spot_prediction_model: Literal["Spotiflow", "UFISH"] = "Spotiflow"):
     """Register each tile across rounds in local coordinates.
 
     Parameters
@@ -33,7 +25,7 @@ def local_register_data(root_path: Path):
     """
 
     # initialize datastore
-    datastore_path = root_path / Path(r"qi2labdatastore")
+    datastore_path
     datastore = qi2labDataStore(datastore_path)
 
     # initialize registration class
@@ -41,8 +33,12 @@ def local_register_data(root_path: Path):
         datastore=datastore,
         perform_optical_flow=False,
         overwrite_registered=True,
-        save_all_polyDT_registered=False
+        save_all_polyDT_registered=False,
+        spot_prediction_model=spot_prediction_model,
     )
+
+    # Temp : don't use the imagej part of rlgc
+    registration_factory._bkd_subtract_polyDT = False
 
     # run local registration across rounds
     registration_factory.register_all_tiles()
@@ -54,7 +50,7 @@ def local_register_data(root_path: Path):
 
 
 def global_register_data(
-    root_path: Path,
+    datastore_path: Path,
     create_max_proj_tiff: Optional[bool] = True
 ):
     """Register all tiles in first round in global coordinates.
@@ -70,7 +66,6 @@ def global_register_data(
     """
 
     # initialize datastore
-    datastore_path = root_path / Path(r"qi2labdatastore")
     datastore = qi2labDataStore(datastore_path)
 
     affine_zyx_px = np.array([
@@ -114,7 +109,7 @@ def global_register_data(
             Path("segmentation") / Path("cellpose")
         cellpose_path.mkdir(exist_ok=True)
         filename_path = datastore._datastore_path / \
-            Path("segmentation") / Path(filename)
+            Path("segmentation") / Path("cellpose") / Path(filename)
         with TiffWriter(filename_path, bigtiff=True) as tif:
             metadata = {
                 'axes': 'YX',
@@ -148,9 +143,8 @@ def global_register_data(
     datastore.datastore_state = datastore_state
 
 
-def main():
-    app()
-
-
 if __name__ == "__main__":
-    main()
+    root_path = Path(
+        r"/home/hblanc01/Data/simu_igfl/grid_simu_SNR_SBR_Density/qi2labdatastore/qi2labdatastore Img 5 simu MERFISH 8 bits sbr 5 snr 5 density 5 sample 0")
+    local_register_data(root_path)
+    global_register_data(root_path, create_max_proj_tiff=False)

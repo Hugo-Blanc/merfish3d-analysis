@@ -40,6 +40,10 @@ def local_register_data(datastore_path: Path, spot_prediction_model: Literal["Sp
     # Temp : don't use the imagej part of rlgc
     registration_factory._bkd_subtract_polyDT = False
 
+    # Choose to apply decon or not
+    registration_factory._decon_polyDT = True
+    registration_factory._decon = True
+
     # run local registration across rounds
     registration_factory.register_all_tiles()
 
@@ -145,6 +149,6 @@ def global_register_data(
 
 if __name__ == "__main__":
     root_path = Path(
-        r"/home/hblanc01/Data/simu_igfl/grid_simu_SNR_SBR_Density/qi2labdatastore/qi2labdatastore Img 5 simu MERFISH 8 bits sbr 5 snr 5 density 5 sample 0")
-    local_register_data(root_path)
+        r"/home/hblanc01/Data/simu_igfl/grid_simu_SNR_SBR_Density/qi2labdatastore/qi2labdatastore Img 2 simu MERFISH 8 bits sbr 2.5 snr 15 density 0.1 sample 0")
+    local_register_data(root_path, spot_prediction_model='Spotiflow')
     global_register_data(root_path, create_max_proj_tiff=False)

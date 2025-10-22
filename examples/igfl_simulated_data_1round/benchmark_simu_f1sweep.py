@@ -323,9 +323,6 @@ def convert_simulation_folder(
 if __name__ == "__main__":
     root_folder = Path(
         r"/home/hblanc01/Data/simu_igfl/grid_simu_SNR_SBR_Density")
-
-    overwrite = True
-
     # Convert all images in root folder
     convert_simulation_folder(root_path=root_folder)
 
@@ -344,7 +341,7 @@ if __name__ == "__main__":
         print(qi2labdatastore_path)
         # Register and deconvolve
         local_register_data(qi2labdatastore_path,
-                            spot_prediction_model="UFISH")
+                            spot_prediction_model="Spotiflow")
         global_register_data(qi2labdatastore_path, create_max_proj_tiff=False)
 
         # Run F1 sweep
@@ -352,16 +349,13 @@ if __name__ == "__main__":
         run_info = f"Simu {qi2labdatastore_path.name.split(maxsplit=2)[-1]}"
         gt_path = gt_spots_folder / \
             f"gt {qi2labdatastore_path.name.split(maxsplit=2)[-1]}.csv"
-        save_path = f1sweep_result_folder / \
-            f"decode_params_results {qi2labdatastore_path.name}.json"
-        if not save_path.exists() or overwrite:
-            sweep_decode_params(root_path=qi2labdatastore_path, gt_path=gt_path,
-                                save_path=save_path,
-                                spotmap_threshold_range=(0.1, 0.6),
-                                spotmap_threshold_step=0.05,
-                                mag_threshold_range=(0.1, 2),
-                                mag_threshold_step=0.1,)
-            # Plot result as a heatmap
-            plot_heatmap_f1_sweep(f1_sweep_path=save_path, sweep_info=run_info)
-        else:
-            print(f"{save_path.name} already exists and not overwritten.")
+        sweep_decode_params(root_path=qi2labdatastore_path, gt_path=gt_path,
+                            save_folder=f1sweep_result_folder,
+                            spotmap_threshold_range=(0.1, 0.2),
+                            spotmap_threshold_step=0.05,
+                            mag_threshold_range=(0.1, 0.3),
+                            mag_threshold_step=0.1,)
+
+        # Plot result as a heatmap
+        plot_heatmap_f1_sweep(
+            root_path=qi2labdatastore_path, save_folder=f1sweep_result_folder, sweep_info=run_info)

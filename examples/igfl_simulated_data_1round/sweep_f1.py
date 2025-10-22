@@ -15,7 +15,6 @@ import json
 import seaborn as sns
 import matplotlib.pyplot as plt
 import ast
-from textwrap import wrap
 
 
 def calculate_F1_with_radius(
@@ -206,7 +205,7 @@ def decode_pixels(
 def sweep_decode_params(
     root_path: Path,
     gt_path: Path,
-    save_path: Path = None,
+    save_folder: Path = None,
     spotmap_threshold_range: tuple[float] = (0.05, 0.1),
     spotmap_threshold_step: float = 0.01,
     mag_threshold_range: tuple[float] = (0.5, 1),
@@ -231,6 +230,9 @@ def sweep_decode_params(
     """
     assert gt_path.exists(), f"GT path not found: {gt_path}"
 
+    if save_folder == None:
+        save_folder = root_path
+
     mag_values = np.arange(
         mag_threshold_range[0],
         mag_threshold_range[1],
@@ -246,6 +248,7 @@ def sweep_decode_params(
     ).tolist()
 
     results = {}
+    save_path = save_folder / f"decode_params_results {root_path.name}.json"
 
     for spotmap in spotmap_values:
         for mag in mag_values:
@@ -282,7 +285,8 @@ def sweep_decode_params(
 
 
 def plot_heatmap_f1_sweep(
-    f1_sweep_path: Path = None,
+    root_path: Path,
+    save_folder: Path = None,
     sweep_info: str = ''
 ):
     """Plot result from sweep through decoding parameters and calculated F1 scores.
@@ -292,10 +296,15 @@ def plot_heatmap_f1_sweep(
     root_path : Path
         The root path of the experiment.
     """
+    if save_folder == None:
+        save_folder = root_path
+
     sns.set_theme()
 
     # load and format json into a pandas Dataframe
     # TODO find a better io handling
+    f1_sweep_path = save_folder / \
+        f"decode_params_results {root_path.name}.json"
     with open(f1_sweep_path) as f:
         f1_sweep = json.load(f)
     tidy_f1_sweep = {i: ast.literal_eval(
@@ -317,8 +326,8 @@ def plot_heatmap_f1_sweep(
         sns.heatmap(metric_heatmap, mask=metric_heatmap != max_val, annot=True, fmt="n", annot_kws={
                     "weight": 'bold'}, linewidths=.5, ax=ax, vmin=0, vmax=1, cmap="RdYlGn", cbar=False)
         fig_name = f"Heatmap of {metric} for f1 sweep {sweep_info}"
-        f.suptitle("\n".join(wrap(fig_name, 60)))
-        f.savefig(f1_sweep_path.parent / f"{fig_name}.png")
+        f.suptitle(fig_name)
+        f.savefig(save_folder / f"{fig_name}.png")
 
 
 if __name__ == "__main__":

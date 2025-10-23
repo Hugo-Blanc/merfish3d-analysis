@@ -37,6 +37,7 @@ mp.set_start_method('spawn', force=True)
 
 def convert_simulation_folder(
     root_path: Path,
+    qi2labdatastore_folder: Path,
 ):
     """Convert statphysbio simulation into a fake acquisition qi2lab datastore.
 
@@ -82,8 +83,8 @@ def convert_simulation_folder(
     df_experiment_order.to_csv(sim_acq_bitorder_path, index=False)
     experiment_order = df_experiment_order.values
 
-    # create qi2labdatastore folder
-    qi2labdatastore_folder = root_path / "qi2labdatastore"
+    # # create qi2labdatastore folder
+    # qi2labdatastore_folder = root_path / "qi2labdatastore"
 
     # Loop over all simulated images
     # ------------------------
@@ -323,39 +324,51 @@ def convert_simulation_folder(
 if __name__ == "__main__":
     root_folder = Path(
         r"/home/hblanc01/Data/simu_igfl/grid_simu_SNR_SBR_Density")
-    # Convert all images in root folder
-    convert_simulation_folder(root_path=root_folder)
 
-    # Init working folders
-    qi2labdatastore_folder = root_folder / "qi2labdatastore"
-    qi2labdatastore_paths = list(
-        qi2labdatastore_folder.glob("qi2labdatastore*"))
-    gt_spots_folder = root_folder / "gt_points"
+    overwrite = False
 
-    # create f1 sweep result folder
-    f1sweep_result_folder = root_folder / Path("F1 sweep results")
-    f1sweep_result_folder.mkdir(exist_ok=True)
+    spot_detection_models = ["Spotiflow", "UFISH"]
+    for spot_detection_model in spot_detection_models:
+        # Convert all images in root folder
+        qi2labdatastore_folder = root_folder / \
+            f"qi2labdatastore {spot_detection_model}"
+        convert_simulation_folder(root_folder, qi2labdatastore_folder)
 
-    # Loop over each datastore
-    for qi2labdatastore_path in tqdm(qi2labdatastore_paths):
-        print(qi2labdatastore_path)
-        # Register and deconvolve
-        local_register_data(qi2labdatastore_path,
-                            spot_prediction_model="Spotiflow")
-        global_register_data(qi2labdatastore_path, create_max_proj_tiff=False)
+        # Init working folders
+        qi2labdatastore_paths = list(
+            qi2labdatastore_folder.glob("qi2labdatastore*"))
+        gt_spots_folder = root_folder / "gt_points"
 
-        # Run F1 sweep
-        # TODO fix use .name instead of .stem because of decimal value in path name
-        run_info = f"Simu {qi2labdatastore_path.name.split(maxsplit=2)[-1]}"
-        gt_path = gt_spots_folder / \
-            f"gt {qi2labdatastore_path.name.split(maxsplit=2)[-1]}.csv"
-        sweep_decode_params(root_path=qi2labdatastore_path, gt_path=gt_path,
-                            save_folder=f1sweep_result_folder,
-                            spotmap_threshold_range=(0.1, 0.2),
-                            spotmap_threshold_step=0.05,
-                            mag_threshold_range=(0.1, 0.3),
-                            mag_threshold_step=0.1,)
+        # create f1 sweep result folder
+        f1sweep_result_folder = root_folder / \
+            Path(f"F1 sweep results {spot_detection_model}")
+        f1sweep_result_folder.mkdir(exist_ok=True)
 
-        # Plot result as a heatmap
-        plot_heatmap_f1_sweep(
-            root_path=qi2labdatastore_path, save_folder=f1sweep_result_folder, sweep_info=run_info)
+        # Loop over each datastore
+        for qi2labdatastore_path in tqdm(qi2labdatastore_paths):
+            print(qi2labdatastore_path)
+            # Register and deconvolve
+            local_register_data(qi2labdatastore_path,
+                                spot_prediction_model=spot_detection_model)
+            global_register_data(qi2labdatastore_path,
+                                 create_max_proj_tiff=False)
+
+            # Run F1 sweep
+            # TODO fix use .name instead of .stem because of decimal value in path name
+            run_info = f"Simu {qi2labdatastore_path.name.split(maxsplit=2)[-1]}"
+            gt_path = gt_spots_folder / \
+                f"gt {qi2labdatastore_path.name.split(maxsplit=2)[-1]}.csv"
+            save_path = f1sweep_result_folder / \
+                f"decode_params_results {qi2labdatastore_path.name}.json"
+            if not save_path.exists() or overwrite:
+                sweep_decode_params(root_path=qi2labdatastore_path, gt_path=gt_path,
+                                    save_path=save_path,
+                                    spotmap_threshold_range=(0.1, 0.5),
+                                    spotmap_threshold_step=0.05,
+                                    mag_threshold_range=(0.5, 1.5),
+                                    mag_threshold_step=0.1,)
+                # Plot result as a heatmap
+                plot_heatmap_f1_sweep(
+                    f1_sweep_path=save_path, sweep_info=run_info)
+            else:
+                print(f"{save_path.name} already exists and not overwritten.")

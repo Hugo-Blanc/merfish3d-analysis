@@ -452,7 +452,8 @@ def _apply_bits_on_gpu(
                         image=corrected_image,
                         psf=dr._psfs[psf_idx, :],
                         gpu_id=gpu_id,
-                        crop_yx=dr._crop_yx_decon
+                        crop_yx=dr._crop_yx_decon,
+                        eager_mode=True,
                     )
             else:
                 decon_image = corrected_image.copy()

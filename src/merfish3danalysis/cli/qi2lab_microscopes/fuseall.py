@@ -5,29 +5,29 @@ Shepherd 2025/03 - created script.
 """
 
 
+import multiprocessing as mp
+import zarr
+import numpy as np
+import dask
+import dask.array as da
+import dask.diagnostics
+from multiview_stitcher import msi_utils, registration, fusion, ngff_utils
+from multiview_stitcher import spatial_image_utils as si_utils
+from tqdm import tqdm
+import gc
+from pathlib import Path
+from merfish3danalysis.qi2labDataStore import qi2labDataStore
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter("ignore", category=FutureWarning)
-from merfish3danalysis.qi2labDataStore import qi2labDataStore
-from pathlib import Path
-import gc
-from tqdm import tqdm
-from multiview_stitcher import spatial_image_utils as si_utils
-from multiview_stitcher import msi_utils, registration, fusion, ngff_utils
-import dask.diagnostics
-import dask.array as da
-import dask
-import numpy as np
-import zarr
-import multiprocessing as mp
 
 mp.set_start_method('spawn', force=True)
 
 
-def fuse_all_channels(root_path : Path):
+def fuse_all_channels(root_path: Path):
     """Register all channels across all tiles.
-    
-    Registration is performed using the polyDT channel.
+
+    Registration is performed using the fiducial channel.
 
     Parameters
     ----------
@@ -40,12 +40,12 @@ def fuse_all_channels(root_path : Path):
     datastore_path = root_path / Path(r"qi2labdatastore")
     datastore = qi2labDataStore(datastore_path)
     gene_ids = list(datastore.codebook['gene_id'])
-    channel_ids = ["polyDT"] + gene_ids
+    channel_ids = ["fiducial"] + gene_ids
 
     im_data = datastore.load_local_registered_image(
-            tile=0, round=0, return_future=False
-        )
-    
+        tile=0, round=0, return_future=False
+    )
+
     im_shape = im_data.shape
     del im_data
 
@@ -59,8 +59,8 @@ def fuse_all_channels(root_path : Path):
 
         # format voxel size for multiview-stitcher
         scale = {
-            "z": voxel_zyx_um[0], 
-            "y": voxel_zyx_um[1], 
+            "z": voxel_zyx_um[0],
+            "y": voxel_zyx_um[1],
             "x": voxel_zyx_um[2]
         }
 
@@ -86,11 +86,12 @@ def fuse_all_channels(root_path : Path):
                 im_shape[2]
             ),
             dtype=np.uint16)
-        
-        input_path = datastore_path / Path("polyDT") / Path(tile_id) / Path("round001.zarr")
+
+        input_path = datastore_path / \
+            Path("fiducial") / Path(tile_id) / Path("round001.zarr")
         store = zarr.DirectoryStore(str(input_path))
-        im_data[0,:] = da.from_zarr(store, component="registered_decon_data").astype("uint16")
-        
+        im_data[0, :] = da.from_zarr(
+            store, component="registered_decon_data").astype("uint16")
 
         # create spatial image for all channels in current tile
         sim = si_utils.get_sim_from_array(
@@ -107,7 +108,7 @@ def fuse_all_channels(root_path : Path):
         msims.append(msim)
         del im_data
         gc.collect()
-    
+
     # perform registration
     print("\nPerforming registration...")
     with dask.diagnostics.ProgressBar():
@@ -120,15 +121,14 @@ def fuse_all_channels(root_path : Path):
             registration_binning={"z": 3, "y": 6, "x": 6},
             post_registration_do_quality_filter=True,
         )
- 
-    print("\nLazy loading and fusing full-resolution polyDT and readouts...")
+
+    print("\nLazy loading and fusing full-resolution fiducial and readouts...")
     tile_ids = datastore.tile_ids
 
-    
-    for ch_idx in tqdm(range(len(channel_ids)),desc="channel"):
+    for ch_idx in tqdm(range(len(channel_ids)), desc="channel"):
         msims_full = []
-        for tile_idx, msim in enumerate(tqdm(msims,desc="tile")):
-    
+        for tile_idx, msim in enumerate(tqdm(msims, desc="tile")):
+
             # parse the registered fidicual channel to get the registration metadata
             affine = msi_utils.get_transform_from_msim(
                 msim, transform_key="affine_registered"
@@ -142,23 +142,27 @@ def fuse_all_channels(root_path : Path):
             )
 
             # temporary variable for channel data
-            im_data = da.zeros((1,im_shape[0],im_shape[1],im_shape[2]),dtype=np.uint16)
+            im_data = da.zeros(
+                (1, im_shape[0], im_shape[1], im_shape[2]), dtype=np.uint16)
 
             # lazy load tile data
             tile_id = tile_ids[tile_idx]
-        
-        
-            # lazy load deconvolved polyDT
+
+            # lazy load deconvolved fiducial
             if ch_idx == 0:
-                input_path = datastore_path / Path("polyDT") / Path(tile_id) / Path("round001.zarr")
+                input_path = datastore_path / \
+                    Path("fiducial") / Path(tile_id) / Path("round001.zarr")
                 store = zarr.DirectoryStore(str(input_path))
-                im_data[0,:] = da.from_zarr(store, component="registered_decon_data").astype(np.uint16)
+                im_data[0, :] = da.from_zarr(
+                    store, component="registered_decon_data").astype(np.uint16)
             # lazy load deconvolved * (u-fish prediction>0.25) readout bits
             else:
-                input_path = datastore_path / Path("readouts") / Path(tile_id) / Path("bit"+str(ch_idx).zfill(3)+".zarr")
+                input_path = datastore_path / \
+                    Path("readouts") / Path(tile_id) / \
+                    Path("bit"+str(ch_idx).zfill(3)+".zarr")
                 store = zarr.DirectoryStore(str(input_path))
-                im_data[0,:] = (da.from_zarr(store, component="registered_decon_data").astype(np.float32) *\
-                    da.from_zarr(store, component = "registered_ufish_data").astype(np.float32).clip(0.25,1)).astype(np.uint16)
+                im_data[0, :] = (da.from_zarr(store, component="registered_decon_data").astype(np.float32) *
+                                 da.from_zarr(store, component="registered_ufish_data").astype(np.float32).clip(0.25, 1)).astype(np.uint16)
 
             # create spatial image for all channels in current tile using registration metadata instead of stage metadata
             sim_full = si_utils.get_sim_from_array(
@@ -168,7 +172,7 @@ def fuse_all_channels(root_path : Path):
                 translation=origin,
                 affine=affine,
                 transform_key="affine_registered",
-                c_coords = channel_ids[ch_idx]
+                c_coords=channel_ids[ch_idx]
             )
 
             # convert to multiscale spatial image object and append to list for fusion
@@ -176,28 +180,32 @@ def fuse_all_channels(root_path : Path):
             msims_full.append(msim_full)
             del im_data
             gc.collect()
-    
+
         # create fused image object using previously calculated registration metadata and all channels
         print("Constructing fusion...")
         with dask.diagnostics.ProgressBar():
             fused = fusion.fuse(
-                [msi_utils.get_sim_from_msim(msim_full) for msim_full in msims_full],
+                [msi_utils.get_sim_from_msim(msim_full)
+                 for msim_full in msims_full],
                 transform_key='affine_registered',
                 output_chunksize=512,
                 overlap_in_pixels=64,
-                )
-    
+            )
+
         fused_path = root_path / Path("fused")
         fused_path.mkdir(exist_ok=True)
-        ome_output_path = fused_path / Path("ch"+str(ch_idx).zfill(2)+".ome.zarr")
+        ome_output_path = fused_path / \
+            Path("ch"+str(ch_idx).zfill(2)+".ome.zarr")
         print(f'Fusing views and saving output to {str(ome_output_path)}...')
         with dask.diagnostics.ProgressBar():
             fused = ngff_utils.write_sim_to_ome_zarr(
-                fused, 
+                fused,
                 str(ome_output_path),
                 overwrite=True,
-        )
-          
+            )
+
+
 if __name__ == "__main__":
-    root_path = Path(r"/mnt/data2/bioprotean/20250220_Bartelle_control_smFISH_TqIB")
+    root_path = Path(
+        r"/mnt/data2/bioprotean/20250220_Bartelle_control_smFISH_TqIB")
     fuse_all_channels(root_path)

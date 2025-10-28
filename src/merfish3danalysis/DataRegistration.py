@@ -47,7 +47,7 @@ warnings.filterwarnings(
 )
 
 
-def _apply_first_polyDT_on_gpu(
+def _apply_first_fiducial_on_gpu(
     dr,
     gpu_id: int = 0
 ):
@@ -81,7 +81,7 @@ def _apply_first_polyDT_on_gpu(
             psf=dr._psfs[0, :],
             gpu_id=0,
             crop_yx=dr._crop_yx_decon,
-            bkd=dr._bkd_subtract_polyDT,
+            bkd=dr._bkd_subtract_fiducial,
             ij=ij
         )
         del ij
@@ -94,7 +94,7 @@ def _apply_first_polyDT_on_gpu(
         round=dr._round_ids[0]
     )
     print(time_stamp(),
-          f"Finished polyDT tile id: {dr._tile_id}; round id: round001.")
+          f"Finished fiducial tile id: {dr._tile_id}; round id: round001.")
 
     del raw0, ref_image_decon
     gc.collect()
@@ -102,13 +102,13 @@ def _apply_first_polyDT_on_gpu(
     return True
 
 
-def _apply_polyDT_on_gpu(
+def _apply_fiducial_on_gpu(
     dr,
     round_list: list,
     gpu_id: int = 0
 ):
     """
-    Run the “deconvolve→rigid+optical‐flow” loop for a subset of polyDT rounds on a single GPU.
+    Run the “deconvolve→rigid+optical‐flow” loop for a subset of fiducial rounds on a single GPU.
 
     Parameters
     ----------
@@ -159,7 +159,7 @@ def _apply_polyDT_on_gpu(
                 has_reg_decon_data = True
 
             if not (has_reg_decon_data) or dr._overwrite_registered:
-                if dr._decon_polyDT:
+                if dr._decon_fiducial:
                     ref_image_decon_float = dr._datastore.load_local_registered_image(
                         tile=dr._tile_id,
                         round=dr._round_ids[0],
@@ -171,7 +171,7 @@ def _apply_polyDT_on_gpu(
                         round=dr._round_ids[0],
                         return_future=False
                     )
-                    if dr._bkd_subtract_polyDT:
+                    if dr._bkd_subtract_fiducial:
                         imp_array = ij.py.to_imageplus(ref_image)
                         imp_array.setStack(imp_array.getStack().duplicate())
                         imp_array.show()
@@ -195,7 +195,7 @@ def _apply_polyDT_on_gpu(
                     return_future=False
                 )
 
-                if dr._decon_polyDT:
+                if dr._decon_fiducial:
                     from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
                     if dr._datastore.microscope_type == "2D":
                         imp_array = ij.py.to_imageplus(raw)
@@ -231,7 +231,7 @@ def _apply_polyDT_on_gpu(
                             ij=ij
                         )
                 else:
-                    if dr._bkd_subtract_polyDT:
+                    if dr._bkd_subtract_fiducial:
                         imp_array = ij.py.to_imageplus(raw)
                         imp_array.setStack(imp_array.getStack().duplicate())
                         imp_array.show()
@@ -334,7 +334,7 @@ def _apply_polyDT_on_gpu(
                     data_registered = mov_image_decon_float.clip(
                         0, 2**16-1).astype(np.uint16)
 
-                if dr.save_all_polyDT_registered:
+                if dr.save_all_fiducial_registered:
                     dr._datastore.save_local_registered_image(
                         registered_image=data_registered.astype(np.uint16),
                         tile=dr._tile_id,
@@ -342,7 +342,7 @@ def _apply_polyDT_on_gpu(
                         round=round_id
                     )
                 print(
-                    time_stamp(), f"Finished polyDT tile id: {dr._tile_id}; round id: {round_id}.")
+                    time_stamp(), f"Finished fiducial tile id: {dr._tile_id}; round id: {round_id}.")
 
                 del data_registered
                 gc.collect()
@@ -397,7 +397,6 @@ def _apply_bits_on_gpu(
     os.environ["ORT_LOG_SEVERITY_LEVEL"] = "3"
     import onnxruntime as ort
     ort.set_default_logger_severity(3)
-    from ufish.api import UFish
     from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
     from merfish3danalysis.utils.registration import apply_transform
     from skimage.transform import rescale
@@ -434,7 +433,7 @@ def _apply_bits_on_gpu(
             )
 
             # deconvolution
-            if dr._decon:
+            if dr._decon_bits:
                 if dr._datastore.microscope_type == "2D":
                     decon_image = np.zeros_like(
                         corrected_image, dtype=np.float32)
@@ -590,16 +589,16 @@ class DataRegistration:
     ----------
     datastore : qi2labDataStore
         Initialized qi2labDataStore object
-    decon_polyDT: bool, default False
-        Deconvolve ALL polyDT rounds. False = only deconvolve round 1 for downstream stitching.
-    bkd_subtract_polyDT: bool, default True
-        Background subtraction ALL polyDT rounds.
+    decon_fiducial: bool, default False
+        Deconvolve ALL fiducial rounds. False = only deconvolve round 1 for downstream stitching.
+    bkd_subtract_fiducial: bool, default True
+        Background subtraction ALL fiducial rounds.
     overwrite_registered: bool, default False
         Overwrite existing registered data and registrations
     perform_optical_flow: bool, default False
         Perform optical flow registration
-    save_all_polyDT_registered: bool, default True
-        Save fidicual polyDT rounds > 1. These are not used for analysis. 
+    save_all_fiducial_registered: bool, default True
+        Save fidicual fiducial rounds > 1. These are not used for analysis. 
     num_gpus: int, default 1
         Number of GPUs to use for registration.
     crop_yx_decon: int, default 1024
@@ -609,31 +608,31 @@ class DataRegistration:
     def __init__(
         self,
         datastore: qi2labDataStore,
-        decon_polyDT: bool = False,
-        bkd_subtract_polyDT: bool = True,
+        decon_fiducial: bool = False,
+        bkd_subtract_fiducial: bool = True,
         overwrite_registered: bool = False,
         perform_optical_flow: bool = True,
-        save_all_polyDT_registered: bool = False,
+        save_all_fiducial_registered: bool = False,
         num_gpus: int = 1,
         crop_yx_decon: int = 1024,
         spot_prediction_model: str = "Spotiflow"
     ):
         self._datastore = datastore
-        self._decon_polyDT = decon_polyDT
+        self._decon_fiducial = decon_fiducial
         self._tile_ids = self._datastore.tile_ids
         self._round_ids = self._datastore.round_ids
         self._bit_ids = self._datastore.bit_ids
         self._psfs = self._datastore.channel_psfs
         self._num_gpus = num_gpus
         self._crop_yx_decon = crop_yx_decon
-        self._bkd_subtract_polyDT = bkd_subtract_polyDT
+        self._bkd_subtract_fiducial = bkd_subtract_fiducial
 
         self._perform_optical_flow = perform_optical_flow
         self._data_raw = None
         self._has_registered_data = None
         self._overwrite_registered = overwrite_registered
-        self.save_all_polyDT_registered = save_all_polyDT_registered
-        self._decon = True
+        self.save_all_fiducial_registered = save_all_fiducial_registered
+        self._decon_bits = True
         self._original_print = builtins.print
         self.spot_prediction_model = spot_prediction_model
 
@@ -818,7 +817,7 @@ class DataRegistration:
         if not (has_reg_decon_data) or self._overwrite_registered:
 
             p_first = mp.Process(
-                target=_apply_first_polyDT_on_gpu, args=(self, 0))
+                target=_apply_first_fiducial_on_gpu, args=(self, 0))
             p_first.start()
             p_first.join()
 
@@ -846,7 +845,7 @@ class DataRegistration:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
             try:
                 # Inside child, logical device 0 maps to this physical GPU.
-                p = mp.Process(target=_apply_polyDT_on_gpu,
+                p = mp.Process(target=_apply_fiducial_on_gpu,
                                args=(self, subset, 0))
                 p.start()
                 processes.append(p)

@@ -100,7 +100,8 @@ def calculate_F1_with_radius(
     pair_g_idx_all: list[np.ndarray] = []
     pair_dist_all:  list[np.ndarray] = []
 
-    common_genes = np.intersect1d(np.unique(qi2lab_gene_ids), np.unique(gt_gene_ids))
+    common_genes = np.intersect1d(
+        np.unique(qi2lab_gene_ids), np.unique(gt_gene_ids))
     for gene in common_genes:
         q_idx = np.flatnonzero(qi2lab_gene_ids == gene)
         g_idx = np.flatnonzero(gt_gene_ids == gene)
@@ -117,7 +118,8 @@ def calculate_F1_with_radius(
                 g_tree, max_distance=radius, output_type="coo_matrix"
             )
         except TypeError:
-            dist_coo = q_tree.sparse_distance_matrix(g_tree, max_distance=radius).tocoo()
+            dist_coo = q_tree.sparse_distance_matrix(
+                g_tree, max_distance=radius).tocoo()
 
         if dist_coo.nnz == 0:
             continue
@@ -125,7 +127,7 @@ def calculate_F1_with_radius(
         # Local -> global index mapping
         q_local = dist_coo.row
         g_local = dist_coo.col
-        dists   = dist_coo.data
+        dists = dist_coo.data
 
         pair_q_idx_all.append(q_idx[q_local])
         pair_g_idx_all.append(g_idx[g_local])
@@ -139,7 +141,7 @@ def calculate_F1_with_radius(
     else:
         pair_q_idx = np.concatenate(pair_q_idx_all)
         pair_g_idx = np.concatenate(pair_g_idx_all)
-        pair_dist  = np.concatenate(pair_dist_all)
+        pair_dist = np.concatenate(pair_dist_all)
 
         # Sort globally by distance (closest first)
         order = np.argsort(pair_dist, kind="stable")
@@ -162,8 +164,9 @@ def calculate_F1_with_radius(
         fn = int(Ng - g_used.sum())
 
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall    = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / \
+        (precision + recall) if (precision + recall) > 0 else 0.0
 
     return {
         "F1 Score": f1,
@@ -174,11 +177,12 @@ def calculate_F1_with_radius(
         "False Negatives": int(fn),
     }
 
+
 def decode_pixels(
     root_path: Path,
     minimum_pixels_per_RNA: int = 2,
     ufish_threshold: float = 0.01,
-    magnitude_threshold: float = (.9,5.),
+    magnitude_threshold: float = (.9, 5.),
 ):
     """Perform pixel decoding.
 
@@ -204,42 +208,41 @@ def decode_pixels(
 
     # initialize decodor class
     decoder = PixelDecoder(
-        datastore=datastore, 
-        use_mask=False, 
-        merfish_bits=merfish_bits, 
+        datastore=datastore,
+        use_mask=False,
+        merfish_bits=merfish_bits,
         num_gpus=1,
         verbose=1,
     )
     # f1 = []
     # for tile_idx in range(0,60):
-        # stage_zyx_um, _ = datastore.load_local_stage_position_zyx_um(tile=tile_idx,round=0)
-        # RNA_file_name = Path("spots_mouse1sample1.csv")
-        # file_name = root_path / RNA_file_name
-        # df_RNA = pd.read_csv(file_name)
+    # stage_zyx_um, _ = datastore.load_local_stage_position_zyx_um(tile=tile_idx,round=0)
+    # RNA_file_name = Path("spots_mouse1sample1.csv")
+    # file_name = root_path / RNA_file_name
+    # df_RNA = pd.read_csv(file_name)
 
-        # x_min = stage_zyx_um[0] #- datastore.voxel_size_zyx_um[1]*1024
-        # x_max = stage_zyx_um[0] + datastore.voxel_size_zyx_um[1]*2048
+    # x_min = stage_zyx_um[0] #- datastore.voxel_size_zyx_um[1]*1024
+    # x_max = stage_zyx_um[0] + datastore.voxel_size_zyx_um[1]*2048
 
-        # y_min = stage_zyx_um[1] #- datastore.voxel_size_zyx_um[1]*1024
-        # y_max = stage_zyx_um[1] + datastore.voxel_size_zyx_um[1]*2048
-        # print(f"tile: {tile_idx}")
-        # print(f"x_min: {x_min}, x_max: {x_max}")
-        # print(f"y_min: {y_min}, y_max: {y_max}")
-        # affine_xform_um, _, _ = datastore.load_global_coord_xforms_um(tile=tile_idx)
+    # y_min = stage_zyx_um[1] #- datastore.voxel_size_zyx_um[1]*1024
+    # y_max = stage_zyx_um[1] + datastore.voxel_size_zyx_um[1]*2048
+    # print(f"tile: {tile_idx}")
+    # print(f"x_min: {x_min}, x_max: {x_max}")
+    # print(f"y_min: {y_min}, y_max: {y_max}")
+    # affine_xform_um, _, _ = datastore.load_global_coord_xforms_um(tile=tile_idx)
 
-        # mask = (
-        #     df_RNA["global_x"].between(x_min, x_max)
-        #     & df_RNA["global_y"].between(y_min, y_max)
-        # )
-        # df_RNA_filtered = df_RNA[mask].copy()
-        # df_RNA_filtered = df_RNA_filtered[~df_RNA_filtered["target_molecule_name"].str.startswith("Blank-")]
-        # df_RNA_filtered['global_x'] += affine_xform_um[1][3]- 5*datastore.voxel_size_zyx_um[1]
-        # df_RNA_filtered['global_y'] += affine_xform_um[2][3]- 7*datastore.voxel_size_zyx_um[2]
-        # #df_RNA_filtered = df_RNA_filtered[df_RNA_filtered["global_z"]>0]
-        # merlin_coords = df_RNA_filtered[['global_z','global_x', 'global_y']].to_numpy()
-        # merlin_gene_ids = df_RNA_filtered['target_molecule_name'].to_numpy()
+    # mask = (
+    #     df_RNA["global_x"].between(x_min, x_max)
+    #     & df_RNA["global_y"].between(y_min, y_max)
+    # )
+    # df_RNA_filtered = df_RNA[mask].copy()
+    # df_RNA_filtered = df_RNA_filtered[~df_RNA_filtered["target_molecule_name"].str.startswith("Blank-")]
+    # df_RNA_filtered['global_x'] += affine_xform_um[1][3]- 5*datastore.voxel_size_zyx_um[1]
+    # df_RNA_filtered['global_y'] += affine_xform_um[2][3]- 7*datastore.voxel_size_zyx_um[2]
+    # #df_RNA_filtered = df_RNA_filtered[df_RNA_filtered["global_z"]>0]
+    # merlin_coords = df_RNA_filtered[['global_z','global_x', 'global_y']].to_numpy()
+    # merlin_gene_ids = df_RNA_filtered['target_molecule_name'].to_numpy()
 
-        
     #     #data = datastore.load_local_corrected_image(tile=53,round=0,return_future=False)
     #     decoded_spots = datastore.load_local_decoded_spots(tile=tile_idx)
     #     decoded_spots["gene_id"] = decoded_spots["gene_id"].str.strip().str.replace("1-Mar","March1",regex=False)
@@ -271,37 +274,42 @@ def decode_pixels(
         display_results=False,
         return_results=True,
         magnitude_threshold=magnitude_threshold,
-        lowpass_sigma=(0,0,0),
+        lowpass_sigma=(0, 0, 0),
         minimum_pixels=minimum_pixels_per_RNA,
         use_normalization=True,
         ufish_threshold=ufish_threshold
     )
-    stage_zyx_um, affine_xform_um = datastore.load_local_stage_position_zyx_um(round=0, tile=tile_idx)
+    stage_zyx_um, affine_xform_um = datastore.load_local_stage_position_zyx_um(
+        round=0, tile=tile_idx)
 
     RNA_file_name = Path("spots_mouse1sample1.csv")
     file_name = root_path / RNA_file_name
     df_RNA = pd.read_csv(file_name)
 
-    x_min = stage_zyx_um[0] #- datastore.voxel_size_zyx_um[1]*1024
+    x_min = stage_zyx_um[0]  # - datastore.voxel_size_zyx_um[1]*1024
     x_max = stage_zyx_um[0] + datastore.voxel_size_zyx_um[1]*2048
 
-    y_min = stage_zyx_um[1] #- datastore.voxel_size_zyx_um[1]*1024
+    y_min = stage_zyx_um[1]  # - datastore.voxel_size_zyx_um[1]*1024
     y_max = stage_zyx_um[1] + datastore.voxel_size_zyx_um[1]*2048
     print(f"tile: {tile_idx}")
     print(f"x_min: {x_min}, x_max: {x_max}")
     print(f"y_min: {y_min}, y_max: {y_max}")
-    affine_xform_um, _, _ = datastore.load_global_coord_xforms_um(tile=tile_idx)
+    affine_xform_um, _, _ = datastore.load_global_coord_xforms_um(
+        tile=tile_idx)
 
     mask = (
         df_RNA["global_x"].between(x_min, x_max)
         & df_RNA["global_y"].between(y_min, y_max)
     )
     df_RNA_filtered = df_RNA[mask].copy()
-    #df_RNA_filtered = df_RNA_filtered[~df_RNA_filtered["target_molecule_name"].str.startswith("Blank-")]
-    df_RNA_filtered['global_x'] += affine_xform_um[1][3]- 5*datastore.voxel_size_zyx_um[1]
-    df_RNA_filtered['global_y'] += affine_xform_um[2][3]- 7*datastore.voxel_size_zyx_um[2]
-    #df_RNA_filtered = df_RNA_filtered[df_RNA_filtered["global_z"]>0]
-    merlin_coords = df_RNA_filtered[['global_z','global_x', 'global_y']].to_numpy()
+    # df_RNA_filtered = df_RNA_filtered[~df_RNA_filtered["target_molecule_name"].str.startswith("Blank-")]
+    df_RNA_filtered['global_x'] += affine_xform_um[1][3] - \
+        5*datastore.voxel_size_zyx_um[1]
+    df_RNA_filtered['global_y'] += affine_xform_um[2][3] - \
+        7*datastore.voxel_size_zyx_um[2]
+    # df_RNA_filtered = df_RNA_filtered[df_RNA_filtered["global_z"]>0]
+    merlin_coords = df_RNA_filtered[[
+        'global_z', 'global_x', 'global_y']].to_numpy()
     merlin_gene_ids = df_RNA_filtered['target_molecule_name'].to_numpy()
 
     # decoded_spots = datastore.load_local_decoded_spots(tile=tile_idx)
@@ -310,14 +318,15 @@ def decode_pixels(
     # qi2lab_coords = decoded_spots[['global_z','global_y', 'global_x']].to_numpy()
     # qi2lab_gene_ids = decoded_spots['gene_id'].to_numpy()
 
-    polyDT_image = datastore.load_local_registered_image(
+    fiducial_image = datastore.load_local_registered_image(
         tile=tile_idx,
         round=0,
         return_future=False
     )
 
     decoded_spots = decoder._df_barcodes
-    qi2lab_coords = decoded_spots[['global_z','global_y', 'global_x']].to_numpy()
+    qi2lab_coords = decoded_spots[[
+        'global_z', 'global_y', 'global_x']].to_numpy()
     qi2lab_gene_ids = decoded_spots['gene_id'].to_numpy()
 
     results = calculate_F1_with_radius(
@@ -328,7 +337,7 @@ def decode_pixels(
         5.0
     )
 
-    distance[distance>0.6] = -1
+    distance[distance > 0.6] = -1
 
     print(f"F1 score: {results["F1 Score"]}")
 
@@ -337,8 +346,10 @@ def decode_pixels(
 
     viewer.add_image(
         decoded,
-        scale=[1.5,datastore.voxel_size_zyx_um[1],datastore.voxel_size_zyx_um[2]],
-        translate=(stage_zyx_um[0]+affine_xform_um[1][3],stage_zyx_um[1]+affine_xform_um[2][3])
+        scale=[1.5, datastore.voxel_size_zyx_um[1],
+               datastore.voxel_size_zyx_um[2]],
+        translate=(stage_zyx_um[0]+affine_xform_um[1][3],
+                   stage_zyx_um[1]+affine_xform_um[2][3])
     )
     # viewer.add_image(
     #     np.max(scaled,axis=0),
@@ -346,27 +357,31 @@ def decode_pixels(
     #     translate=(stage_zyx_um[0]+affine_xform_um[1][3],stage_zyx_um[1]+affine_xform_um[2][3])
     # )
     viewer.add_image(
-        polyDT_image,
-        scale=[1.5,datastore.voxel_size_zyx_um[1],datastore.voxel_size_zyx_um[2]],
-        translate=(stage_zyx_um[0]+affine_xform_um[1][3],stage_zyx_um[1]+affine_xform_um[2][3])
+        fiducial_image,
+        scale=[1.5, datastore.voxel_size_zyx_um[1],
+               datastore.voxel_size_zyx_um[2]],
+        translate=(stage_zyx_um[0]+affine_xform_um[1][3],
+                   stage_zyx_um[1]+affine_xform_um[2][3])
     )
     viewer.add_image(
         mag,
-        scale=[1.5,datastore.voxel_size_zyx_um[1],datastore.voxel_size_zyx_um[2]],
-        translate=(stage_zyx_um[0]+affine_xform_um[1][3],stage_zyx_um[1]+affine_xform_um[2][3])
+        scale=[1.5, datastore.voxel_size_zyx_um[1],
+               datastore.voxel_size_zyx_um[2]],
+        translate=(stage_zyx_um[0]+affine_xform_um[1][3],
+                   stage_zyx_um[1]+affine_xform_um[2][3])
     )
     viewer.add_image(
         distance,
-        scale=[1.5,datastore.voxel_size_zyx_um[1],datastore.voxel_size_zyx_um[2]],
-        translate=(stage_zyx_um[0]+affine_xform_um[1][3],stage_zyx_um[1]+affine_xform_um[2][3])
+        scale=[1.5, datastore.voxel_size_zyx_um[1],
+               datastore.voxel_size_zyx_um[2]],
+        translate=(stage_zyx_um[0]+affine_xform_um[1][3],
+                   stage_zyx_um[1]+affine_xform_um[2][3])
     )
-    viewer.add_points(merlin_coords,size=2.0,face_color="cyan")
-    viewer.add_points(qi2lab_coords,size=2.0,symbol='s',face_color="orange")
+    viewer.add_points(merlin_coords, size=2.0, face_color="cyan")
+    viewer.add_points(qi2lab_coords, size=2.0, symbol='s', face_color="orange")
     viewer.scale_bar.visible = True
     viewer.scale_bar.unit = 'um'
     napari.run()
-
-
 
 
 if __name__ == "__main__":

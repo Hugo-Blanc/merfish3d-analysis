@@ -948,8 +948,8 @@ class qi2labDataStore:
             Path(r".zattrs")
         empty_zattrs = {}
         self._save_to_json(empty_zattrs, calibrations_zattrs_path)
-        self._polyDT_root_path = self._datastore_path / Path(r"polyDT")
-        self._polyDT_root_path.mkdir()
+        self._fiducial_root_path = self._datastore_path / Path(r"fiducial")
+        self._fiducial_root_path.mkdir()
         self._readouts_root_path = self._datastore_path / Path(r"readouts")
         self._readouts_root_path.mkdir()
         self._spotmap_localizations_root_path = self._datastore_path / Path(
@@ -1260,7 +1260,7 @@ class qi2labDataStore:
         # directory structure as defined by qi2lab spec
         self._calibrations_zarr_path = self._datastore_path / \
             Path(r"calibrations.zarr")
-        self._polyDT_root_path = self._datastore_path / Path(r"polyDT")
+        self._fiducial_root_path = self._datastore_path / Path(r"fiducial")
         self._readouts_root_path = self._datastore_path / Path(r"readouts")
         self._spotmap_localizations_root_path = self._datastore_path / Path(
             r"spotmap_localizations"
@@ -1341,21 +1341,21 @@ class qi2labDataStore:
             # except Exception:
             #     print("Calibration noise map missing.")
 
-        # validate polyDT and readout bits data
+        # validate fiducial and readout bits data
         if self._datastore_state["Corrected"]:
-            if not (self._polyDT_root_path.exists()):
-                raise FileNotFoundError("PolyDT directory not initialized")
+            if not (self._fiducial_root_path.exists()):
+                raise FileNotFoundError("fiducial directory not initialized")
             else:
-                polyDT_tile_ids = sorted(
+                fiducial_tile_ids = sorted(
                     [
                         entry.name
-                        for entry in self._polyDT_root_path.iterdir()
+                        for entry in self._fiducial_root_path.iterdir()
                         if entry.is_dir()
                     ],
                     key=lambda x: int(x.split("tile")[1].split(".zarr")[0]),
                 )
-                current_tile_dir_path = self._polyDT_root_path / Path(
-                    polyDT_tile_ids[0]
+                current_tile_dir_path = self._fiducial_root_path / Path(
+                    fiducial_tile_ids[0]
                 )
                 self._round_ids = sorted(
                     [
@@ -1388,22 +1388,22 @@ class qi2labDataStore:
                     key=lambda x: int(x.split("bit")[1].split(".zarr")[0]),
                 )
             assert (
-                polyDT_tile_ids == readout_tile_ids
-            ), "polyDT and readout tile ids do not match. Conversion error."
-            self._tile_ids = polyDT_tile_ids.copy()
-            del polyDT_tile_ids, readout_tile_ids
+                fiducial_tile_ids == readout_tile_ids
+            ), "fiducial and readout tile ids do not match. Conversion error."
+            self._tile_ids = fiducial_tile_ids.copy()
+            del fiducial_tile_ids, readout_tile_ids
 
             for tile_id, round_id in product(self._tile_ids, self._round_ids):
                 try:
                     zattrs_path = str(
-                        self._polyDT_root_path
+                        self._fiducial_root_path
                         / Path(tile_id)
                         / Path(round_id + ".zarr")
                         / Path(".zattrs")
                     )
                     attributes = self._load_from_json(zattrs_path)
                 except (FileNotFoundError, json.JSONDecodeError):
-                    print("polyDT tile attributes not found")
+                    print("fiducial tile attributes not found")
 
                 keys_to_check = [
                     "stage_zyx_um",
@@ -1418,10 +1418,10 @@ class qi2labDataStore:
                     if key not in attributes.keys():
                         print(tile_id, round_id, key)
                         raise KeyError(
-                            "Corrected polyDT attributes incomplete")
+                            "Corrected fiducial attributes incomplete")
 
                 current_local_zarr_path = str(
-                    self._polyDT_root_path
+                    self._fiducial_root_path
                     / Path(tile_id)
                     / Path(round_id + ".zarr")
                     / Path("corrected_data")
@@ -1434,7 +1434,7 @@ class qi2labDataStore:
                     )
                 except (IOError, OSError, ZarrError):
                     print(tile_id, round_id)
-                    print("Corrected polyDT data missing.")
+                    print("Corrected fiducial data missing.")
 
             for tile_id, bit_id in product(self._tile_ids, self._bit_ids):
                 try:
@@ -1482,7 +1482,7 @@ class qi2labDataStore:
                 if round_id is not self._round_ids[0]:
                     try:
                         zattrs_path = str(
-                            self._polyDT_root_path
+                            self._fiducial_root_path
                             / Path(tile_id)
                             / Path(round_id + ".zarr")
                             / Path(".zattrs")
@@ -1490,7 +1490,7 @@ class qi2labDataStore:
                         with open(zattrs_path, "r") as f:
                             attributes = json.load(f)
                     except (FileNotFoundError, json.JSONDecodeError):
-                        print("polyDT tile attributes not found")
+                        print("fiducial tile attributes not found")
 
                     keys_to_check = ["rigid_xform_xyz_px"]
 
@@ -1500,7 +1500,7 @@ class qi2labDataStore:
                                 f"{round_id, tile_id} Rigid registration missing")
 
                     current_local_zarr_path = str(
-                        self._polyDT_root_path
+                        self._fiducial_root_path
                         / Path(tile_id)
                         / Path(round_id + ".zarr")
                         / Path("opticalflow_xform_px")
@@ -1517,7 +1517,7 @@ class qi2labDataStore:
                         pass
 
                 current_local_zarr_path = str(
-                    self._polyDT_root_path
+                    self._fiducial_root_path
                     / Path(tile_id)
                     / Path(round_id + ".zarr")
                     / Path("registered_decon_data")
@@ -1530,7 +1530,7 @@ class qi2labDataStore:
                         )
                     except (IOError, OSError, ZarrError):
                         print(tile_id, round_id)
-                        print("Registered polyDT data missing.")
+                        print("Registered fiducial data missing.")
 
             for tile_id, bit_id in product(self._tile_ids, self._bit_ids):
                 current_local_zarr_path = str(
@@ -1581,7 +1581,7 @@ class qi2labDataStore:
             for tile_id in self._tile_ids:
                 try:
                     zattrs_path = str(
-                        self._polyDT_root_path
+                        self._fiducial_root_path
                         / Path(tile_id)
                         / Path(self._round_ids[0] + ".zarr")
                         / Path(".zattrs")
@@ -1589,7 +1589,7 @@ class qi2labDataStore:
                     with open(zattrs_path, "r") as f:
                         attributes = json.load(f)
                 except (FileNotFoundError, json.JSONDecodeError):
-                    print("polyDT tile attributes not found")
+                    print("fiducial tile attributes not found")
 
                 keys_to_check = ["affine_zyx_um",
                                  "origin_zyx_um", "spacing_zyx_um"]
@@ -1604,7 +1604,7 @@ class qi2labDataStore:
                 zattrs_path = str(
                     self._fused_root_path
                     / Path("fused.zarr")
-                    / Path("fused_polyDT_iso_zyx")
+                    / Path("fused_fiducial_iso_zyx")
                     / Path(".zattrs")
                 )
                 with open(zattrs_path, "r") as f:
@@ -1622,7 +1622,7 @@ class qi2labDataStore:
             current_local_zarr_path = str(
                 self._fused_root_path
                 / Path("fused.zarr")
-                / Path("fused_polyDT_iso_zyx")
+                / Path("fused_fiducial_iso_zyx")
             )
 
             try:
@@ -1639,7 +1639,7 @@ class qi2labDataStore:
                 self._segmentation_root_path
                 / Path("cellpose")
                 / Path("cellpose.zarr")
-                / Path("masks_polyDT_iso_zyx")
+                / Path("masks_fiducial_iso_zyx")
             )
 
             try:
@@ -1784,20 +1784,22 @@ class qi2labDataStore:
             return None
 
         try:
-            polyDT_tile_path = self._polyDT_root_path / Path(tile_id)
-            polyDT_tile_path.mkdir()
+            fiducial_tile_path = self._fiducial_root_path / Path(tile_id)
+            fiducial_tile_path.mkdir()
             for round_idx, round_id in enumerate(self._round_ids):
-                polyDT_round_path = polyDT_tile_path / Path(round_id + ".zarr")
-                polyDT_round_path.mkdir()
-                polydt_round_attrs_path = polyDT_round_path / Path(".zattrs")
+                fiducial_round_path = fiducial_tile_path / \
+                    Path(round_id + ".zarr")
+                fiducial_round_path.mkdir()
+                fiducial_round_attrs_path = fiducial_round_path / \
+                    Path(".zattrs")
                 round_attrs = {
                     "bit_linker": self._experiment_order.to_numpy()[round_idx, 1:]
                     .astype(int)
                     .tolist(),
                 }
-                self._save_to_json(round_attrs, polydt_round_attrs_path)
+                self._save_to_json(round_attrs, fiducial_round_attrs_path)
         except FileExistsError:
-            print("Error creating polyDT tile. Does it exist already?")
+            print("Error creating fiducial tile. Does it exist already?")
 
         try:
             readout_tile_path = self._readouts_root_path / Path(tile_id)
@@ -1889,7 +1891,7 @@ class qi2labDataStore:
 
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(round_id + ".zarr")
                 / Path(".zattrs")
@@ -1953,7 +1955,7 @@ class qi2labDataStore:
 
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(round_id + ".zarr")
                 / Path(".zattrs")
@@ -2153,7 +2155,7 @@ class qi2labDataStore:
 
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(round_id + ".zarr")
                 / Path(".zattrs")
@@ -2221,7 +2223,7 @@ class qi2labDataStore:
 
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(round_id + ".zarr")
                 / Path(".zattrs")
@@ -2317,7 +2319,7 @@ class qi2labDataStore:
                 print("'round' must be integer index or string identifier")
                 return None
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path(".zattrs")
@@ -2413,7 +2415,7 @@ class qi2labDataStore:
                 print("'round' must be integer index or string identifier")
                 return None
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path(".zattrs")
@@ -2513,7 +2515,7 @@ class qi2labDataStore:
                 print("'round' must be integer index or string identifier")
                 return None
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path(".zattrs")
@@ -2613,7 +2615,7 @@ class qi2labDataStore:
                 print("'round' must be integer index or string identifier")
                 return None
             current_local_zarr_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path("corrected_data")
@@ -2737,13 +2739,13 @@ class qi2labDataStore:
                 print("'round' must be integer index or string identifier")
                 return None
             current_local_zarr_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path("corrected_data")
             )
             current_local_zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path(".zattrs")
@@ -2820,7 +2822,7 @@ class qi2labDataStore:
             return None
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(round_id + ".zarr")
                 / Path(".zattrs")
@@ -2891,7 +2893,7 @@ class qi2labDataStore:
             return None
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(round_id + ".zarr")
                 / Path(".zattrs")
@@ -2961,13 +2963,13 @@ class qi2labDataStore:
             return None
 
         current_local_zarr_path = str(
-            self._polyDT_root_path
+            self._fiducial_root_path
             / Path(tile_id)
             / Path(round_id + ".zarr")
             / Path("opticalflow_xform_px")
         )
         zattrs_path = str(
-            self._polyDT_root_path
+            self._fiducial_root_path
             / Path(tile_id)
             / Path(round_id + ".zarr")
             / Path(".zattrs")
@@ -3072,13 +3074,13 @@ class qi2labDataStore:
             print("'round' must be integer index or string identifier")
             return None
         current_local_zarr_path = str(
-            self._polyDT_root_path
+            self._fiducial_root_path
             / Path(tile_id)
             / Path(local_id + ".zarr")
             / Path("opticalflow_xform_px")
         )
         current_local_zattrs_path = str(
-            self._polyDT_root_path
+            self._fiducial_root_path
             / Path(tile_id)
             / Path(local_id + ".zarr")
             / Path(".zattrs")
@@ -3199,7 +3201,7 @@ class qi2labDataStore:
                 print("'round' must be integer index or string identifier")
                 return None
             current_local_zarr_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path("registered_decon_data")
@@ -3315,13 +3317,13 @@ class qi2labDataStore:
                 print("'round' must be integer index or string identifier")
                 return None
             current_local_zarr_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path("registered_decon_data")
             )
             current_local_zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(local_id + ".zarr")
                 / Path(".zattrs")
@@ -3666,7 +3668,7 @@ class qi2labDataStore:
 
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(self._round_ids[0] + ".zarr")
                 / Path(".zattrs")
@@ -3722,7 +3724,7 @@ class qi2labDataStore:
 
         try:
             zattrs_path = str(
-                self._polyDT_root_path
+                self._fiducial_root_path
                 / Path(tile_id)
                 / Path(self._round_ids[0] + ".zarr")
                 / Path(".zattrs")
@@ -3761,7 +3763,7 @@ class qi2labDataStore:
 
         current_local_zarr_path = str(
             self._fused_root_path /
-            Path("fused.zarr") / Path("fused_polyDT_iso_zyx")
+            Path("fused.zarr") / Path("fused_fiducial_iso_zyx")
         )
 
         if not Path(current_local_zarr_path).exists():
@@ -3794,7 +3796,7 @@ class qi2labDataStore:
         affine_zyx_um: ArrayLike,
         origin_zyx_um: ArrayLike,
         spacing_zyx_um: ArrayLike,
-        fusion_type: str = "polyDT",
+        fusion_type: str = "fiducial",
         return_future: Optional[bool] = False,
     ):
         """Save downsampled, fused fidicual image.
@@ -3810,13 +3812,13 @@ class qi2labDataStore:
         spacing_zyx_um : ArrayLike
             Global spacing registration transform for fused image.
         fusion_type : str
-            Type of fusion (polyDT or all_channels).
+            Type of fusion (fiducial or all_channels).
         return_future : Optional[bool]
             Return future array.
         """
 
-        if fusion_type == "polyDT":
-            filename = "fused_polyDT_iso_zyx"
+        if fusion_type == "fiducial":
+            filename = "fused_fiducial_iso_zyx"
         else:
             filename = "fused_all_channels_zyx"
         current_local_zarr_path = str(
@@ -4028,7 +4030,7 @@ class qi2labDataStore:
             self._segmentation_root_path
             / Path("cellpose")
             / Path("cellpose.zarr")
-            / Path("masks_polyDT_iso_zyx")
+            / Path("masks_fiducial_iso_zyx")
         )
 
         if not current_local_zarr_path.exists():
@@ -4068,13 +4070,13 @@ class qi2labDataStore:
             self._segmentation_root_path
             / Path("cellpose")
             / Path("cellpose.zarr")
-            / Path("masks_polyDT_iso_zyx")
+            / Path("masks_fiducial_iso_zyx")
         )
         current_local_zattrs_path = str(
             self._segmentation_root_path
             / Path("cellpose")
             / Path("cellpose.zarr")
-            / Path("masks_polyDT_iso_zyx")
+            / Path("masks_fiducial_iso_zyx")
             / Path(".zattrs")
         )
 

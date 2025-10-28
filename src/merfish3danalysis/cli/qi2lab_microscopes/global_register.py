@@ -1,6 +1,6 @@
 """
 Perform registration on qi2labdatastore. By default creates a max 
-projection downsampled polyDT OME-TIFF for cellpose parameter optimization.
+projection downsampled fiducial OME-TIFF for cellpose parameter optimization.
 
 Shepherd 2025/10 - change to CLI.
 Shepherd 2025/07 - rework for multiple GPU support.
@@ -19,9 +19,10 @@ import typer
 app = typer.Typer()
 app.pretty_exceptions_enable = False
 
+
 @app.command()
 def global_register_data(
-    root_path : Path, 
+    root_path: Path,
     create_max_proj_tiff: bool = True
 ):
     """Register all tiles in first round in global coordinates.
@@ -30,7 +31,7 @@ def global_register_data(
     ----------
     root_path: Path
         path to experiment
-    
+
     create_max_proj_tiff: Optional[bool]
         create max projection tiff in the segmentation/cellpose directory. 
         Default = True
@@ -59,12 +60,13 @@ def global_register_data(
 
         voxel_zyx_um = datastore.voxel_size_zyx_um
 
-        scale = {"z": voxel_zyx_um[0], "y": voxel_zyx_um[1], "x": voxel_zyx_um[2]}
+        scale = {"z": voxel_zyx_um[0],
+                 "y": voxel_zyx_um[1], "x": voxel_zyx_um[2]}
 
         tile_position_zyx_um, affine_zyx_px = datastore.load_local_stage_position_zyx_um(
             tile_id, round_id
         )
-        
+
         tile_grid_positions = {
             "z": np.round(tile_position_zyx_um[0], 2),
             "y": np.round(tile_position_zyx_um[1], 2),
@@ -88,7 +90,7 @@ def global_register_data(
         msims.append(msim)
         del im_data
         gc.collect()
-        
+
     # perform registration in three steps, from most downsampling to least.
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         with dask.diagnostics.ProgressBar():
@@ -97,7 +99,7 @@ def global_register_data(
                 reg_channel_index=0,
                 transform_key="stage_metadata",
                 new_transform_key="affine_registered",
-                #pre_registration_pruning_method="keep_axis_aligned",
+                # pre_registration_pruning_method="keep_axis_aligned",
                 registration_binning={"z": 3, "y": 6, "x": 6},
                 post_registration_do_quality_filter=True,
             )
@@ -125,7 +127,8 @@ def global_register_data(
     # perform and save downsampled fusion
     with dask.config.set(**{"array.slicing.split_large_chunks": False}):
         fused_sim = fusion.fuse(
-            [msi_utils.get_sim_from_msim(msim, scale="scale0") for msim in msims],
+            [msi_utils.get_sim_from_msim(msim, scale="scale0")
+             for msim in msims],
             transform_key="affine_registered",
             output_spacing={
                 "z": voxel_zyx_um[0],
@@ -150,7 +153,8 @@ def global_register_data(
         del fused_msim
 
         datastore.save_global_fidicual_image(
-            fused_image=fused_sim.data.compute(scheduler="threads", num_workers=12),
+            fused_image=fused_sim.data.compute(
+                scheduler="threads", num_workers=12),
             affine_zyx_um=affine,
             origin_zyx_um=origin,
             spacing_zyx_um=spacing,
@@ -164,22 +168,25 @@ def global_register_data(
     datastore_state.update({"GlobalRegistered": True})
     datastore_state.update({"Fused": True})
     datastore.datastore_state = datastore_state
-    
+
     # write max projection OME-TIFF for cellpose GUI
     if create_max_proj_tiff:
-        # load downsampled, fused polyDT image and coordinates 
-        polyDT_fused, _, _, spacing_zyx_um = datastore.load_global_fidicual_image(return_future=False)
-        
+        # load downsampled, fused fiducial image and coordinates
+        fiducial_fused, _, _, spacing_zyx_um = datastore.load_global_fidicual_image(
+            return_future=False)
+
         # create max projection
-        polyDT_max_projection = np.max(np.squeeze(polyDT_fused),axis=0)
-        del polyDT_fused
-        
-        filename = 'polyDT_max_projection.ome.tiff'
-        cellpose_path = datastore._datastore_path / Path("segmentation") / Path("cellpose")
+        fiducial_max_projection = np.max(np.squeeze(fiducial_fused), axis=0)
+        del fiducial_fused
+
+        filename = 'fiducial_max_projection.ome.tiff'
+        cellpose_path = datastore._datastore_path / \
+            Path("segmentation") / Path("cellpose")
         cellpose_path.mkdir(exist_ok=True)
-        filename_path = datastore._datastore_path / Path("segmentation") / Path("cellpose") / Path(filename)
+        filename_path = datastore._datastore_path / \
+            Path("segmentation") / Path("cellpose") / Path(filename)
         with TiffWriter(filename_path, bigtiff=True) as tif:
-            metadata={
+            metadata = {
                 'axes': 'YX',
                 'SignificantBits': 16,
                 'PhysicalSizeX': spacing_zyx_um[2],
@@ -195,7 +202,7 @@ def global_register_data(
                 resolutionunit='CENTIMETER',
             )
             tif.write(
-                polyDT_max_projection,
+                fiducial_max_projection,
                 resolution=(
                     1e4 / spacing_zyx_um[1],
                     1e4 / spacing_zyx_um[2]
@@ -203,9 +210,11 @@ def global_register_data(
                 **options,
                 metadata=metadata
             )
-    
+
+
 def main():
     app()
+
 
 if __name__ == "__main__":
     main()

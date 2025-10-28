@@ -21,33 +21,35 @@ from typing import Optional
 from dask.distributed import Client
 from dask.distributed import fire_and_forget
 
-def init_load_and_correct(datastore, tile_idx, raw_file, offset, e_per_ADU): 
+
+def init_load_and_correct(datastore, tile_idx, raw_file, offset, e_per_ADU):
     datastore.initialize_tile(tile_idx)
     # load raw image
-    # some Zhuang tif files appear to be corrupted when downloaded with wget, 
+    # some Zhuang tif files appear to be corrupted when downloaded with wget,
     # so we catch those errors and notify user.
     try:
         raw_image = imread(raw_file).astype(np.uint16)
         good_shape = raw_image.shape
     except Exception:
-        print("Error reading: " + raw_file  + "; Please re-download")
-        raw_image = np.zeros((good_shape),dtype=np.uint16)
-            
+        print("Error reading: " + raw_file + "; Please re-download")
+        raw_image = np.zeros((good_shape), dtype=np.uint16)
+
     # Correct for gain and offset
     raw_image = (raw_image).astype(np.float32) - offset
-    raw_image[raw_image<0.] = 0.
+    raw_image[raw_image < 0.] = 0.
     raw_image = (raw_image * e_per_ADU).astype(np.uint16)
     return raw_image
 
-def write_to_qi2labdatastore(datastore,raw_image,tile_idx, stage_positions, wavelengths_um):
+
+def write_to_qi2labdatastore(datastore, raw_image, tile_idx, stage_positions, wavelengths_um):
     # write fidicual data first.
-    # Write the same polyDT for each round, as the data is already locally registered.
-    # The metadata tells us polyDT is the 39th entry
+    # Write the same fiducial for each round, as the data is already locally registered.
+    # The metadata tells us fiducial is the 39th entry
     # The Zhuang data is both transposed and flipped, which we fix when writing the data
     psf_idx = 0
-    for round_idx, round_id in enumerate(tqdm(datastore.round_ids,desc="round",leave=False)):
+    for round_idx, round_id in enumerate(tqdm(datastore.round_ids, desc="round", leave=False)):
         datastore.save_local_corrected_image(
-            np.squeeze(np.swapaxes(raw_image[38,:],1,2)),
+            np.squeeze(np.swapaxes(raw_image[38, :], 1, 2)),
             tile=tile_idx,
             psf_idx=psf_idx,
             gain_correction=True,
@@ -56,11 +58,11 @@ def write_to_qi2labdatastore(datastore,raw_image,tile_idx, stage_positions, wave
             round=round_id,
         )
         datastore.save_local_stage_position_zyx_um(
-            stage_positions[tile_idx, :], np.ones((4,4)), tile=tile_idx, round=round_id
+            stage_positions[tile_idx, :], np.ones((4, 4)), tile=tile_idx, round=round_id
         )
         datastore.save_local_wavelengths_um(
-            (wavelengths_um[psf_idx, 0],wavelengths_um[psf_idx, 1]), 
-            tile=tile_idx, 
+            (wavelengths_um[psf_idx, 0], wavelengths_um[psf_idx, 1]),
+            tile=tile_idx,
             round=round_id
         )
 
@@ -68,9 +70,9 @@ def write_to_qi2labdatastore(datastore,raw_image,tile_idx, stage_positions, wave
     # The bits go in order of the codebook
     # The Zhuang data is both transposed and flipped, which we fix when writing the data
     psf_idx = 1
-    for bit_idx, bit_id in enumerate(tqdm(datastore.bit_ids,desc="bit",leave=False)):
+    for bit_idx, bit_id in enumerate(tqdm(datastore.bit_ids, desc="bit", leave=False)):
         datastore.save_local_corrected_image(
-            np.squeeze(np.swapaxes(raw_image[bit_idx, :],1,2)),
+            np.squeeze(np.swapaxes(raw_image[bit_idx, :], 1, 2)),
             tile=tile_idx,
             psf_idx=psf_idx,
             gain_correction=True,
@@ -87,7 +89,7 @@ def write_to_qi2labdatastore(datastore,raw_image,tile_idx, stage_positions, wave
             psf_idx = 1
         else:
             psf_idx = 2
-            
+
     return True
 
 
@@ -129,19 +131,20 @@ def convert_data(
         imaging round, in channel order. Default of `None` assumes
         the file is in the root_path.
     """
-    # Initialize local dask client 
-    client = Client() 
-    
+    # Initialize local dask client
+    client = Client()
+
     # codebook
     codebook = pd.read_csv(codebook_path)
     codebook.drop(columns=["id"], inplace=True)
     codebook.rename(columns={"name": "gene_id"}, inplace=True)
     # Identify "RS" columns and rename them to "bitXX"
     rs_columns = [col for col in codebook.columns if col.startswith("RS")]
-    bit_mapping = {rs_columns[i]: f"bit{str(i+1).zfill(2)}" for i in range(len(rs_columns))}
+    bit_mapping = {
+        rs_columns[i]: f"bit{str(i+1).zfill(2)}" for i in range(len(rs_columns))}
     codebook.rename(columns=bit_mapping, inplace=True)
 
-    # experimental order. 19 rounds with two readouts per round. The 20th round is polyDT and DAPI.
+    # experimental order. 19 rounds with two readouts per round. The 20th round is fiducial and DAPI.
     # The actual experiment is more complicated, but the BIL dataset has already parsed the data.
     experiment_order = np.zeros((19, 3))
     for i in range(19):
@@ -165,8 +168,8 @@ def convert_data(
 
     # gain and offset based on camera model (orca flash v3)
     # https://www.hamamatsu.com/content/dam/hamamatsu-photonics/sites/static/sys/en/manual/C13440-20CU_IM_En.pdf
-    e_per_ADU = .46 # from hamamatsu manual
-    offset = 100. # from hamamats manual
+    e_per_ADU = .46  # from hamamatsu manual
+    offset = 100.  # from hamamats manual
 
     # stage positions from metadata
     stage_position_path = (
@@ -175,7 +178,7 @@ def convert_data(
         / Path("fov_positions")
         / Path("mouse1_sample1.txt")
     )
-    stage_position_df = pd.read_csv(stage_position_path,header=None)
+    stage_position_df = pd.read_csv(stage_position_path, header=None)
     stage_positions = stage_position_df.values
 
     # num tiles back on number of stage positions
@@ -202,7 +205,7 @@ def convert_data(
     datastore.microscope_type = "2D"
     datastore.camera_model = "zhuang_orcav3"
     datastore.tile_overlap = 0.2
-    datastore.e_per_ADU = e_per_ADU 
+    datastore.e_per_ADU = e_per_ADU
     datastore.na = na
     datastore.ri = ri
     datastore.binning = 1
@@ -228,18 +231,21 @@ def convert_data(
     raw_image_files = natsorted(list(raw_images_files_path.glob("*.tif")))
 
     futures = []
-    for tile_idx, raw_image_file in enumerate(tqdm(raw_image_files,desc="tile")):
+    for tile_idx, raw_image_file in enumerate(tqdm(raw_image_files, desc="tile")):
         # initialize datastore tile
         # this creates the directory structure and links fiducial rounds <-> readout bits
-        raw_image = client.submit(init_load_and_correct, datastore, tile_idx, raw_image_file, offset, e_per_ADU)
-        future =  client.submit(write_to_qi2labdatastore, datastore,raw_image,tile_idx, stage_positions, wavelengths_um)
+        raw_image = client.submit(
+            init_load_and_correct, datastore, tile_idx, raw_image_file, offset, e_per_ADU)
+        future = client.submit(write_to_qi2labdatastore, datastore,
+                               raw_image, tile_idx, stage_positions, wavelengths_um)
         futures.append(future)
-        
-    results = client.gather(futures) 
+
+    results = client.gather(futures)
     # update datastore state that "corrected_data" is complete
     datastore_state = datastore.datastore_state
     datastore_state.update({"Corrected": True})
     datastore.datastore_state = datastore_state
+
 
 if __name__ == "__main__":
     root_path = Path(r"/mnt/e/Data/Zhuang_lab_dataset/mop")
@@ -260,5 +266,6 @@ if __name__ == "__main__":
         julia_threads=julia_threads,
         channel_names=["alexa488", "cy5", "alexa750"],
         hot_pixel_image_path=hot_pixel_image_path,
-        codebook_path = root_path / Path("additional_files") / Path("codebook.csv")
+        codebook_path=root_path /
+        Path("additional_files") / Path("codebook.csv")
     )

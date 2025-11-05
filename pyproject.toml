@@ -32,6 +32,10 @@ allow-direct-references = true
 only-include = ["src"]
 sources = ["src"]
 
+[tool.black]
+line-length = 88
+target-version = ['py310', 'py311', 'py312', 'py313']
+
 [tool.ruff]
 ignore = ["E402"]
 

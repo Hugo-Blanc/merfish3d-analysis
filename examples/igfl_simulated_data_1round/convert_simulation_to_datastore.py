@@ -2,7 +2,7 @@
 Convert igfl simulated data into a fake acquisition
 
 The simulation comes as a 4D tiff file with only 1 round and all channels already registered in the same global space.
-Analyse each tiff file as a separate fake acquisition. 
+Analyse each tiff file as a separate fake acquisition.
 
 Required user parameters for system dependent variables are at end of script.
 
@@ -28,9 +28,10 @@ import shutil
 import json
 
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.simplefilter("ignore", category=FutureWarning)
-mp.set_start_method('spawn', force=True)
+mp.set_start_method("spawn", force=True)
 
 
 def convert_simulation(
@@ -49,7 +50,7 @@ def convert_simulation(
     # ------------------------
     # load metadata
     metadata_path = root_path / Path("metadata_simulation.json")
-    with open(metadata_path, 'r') as file:
+    with open(metadata_path, "r") as file:
         metadata = json.load(file)
     num_ch = metadata["num_channels"]
     num_bits = metadata["num_bits"]
@@ -62,15 +63,15 @@ def convert_simulation(
     img_paths.sort()
 
     # reshape simulation to match experimental design
-    img_idx = 5
+    img_idx = 7
     simulation_data = np.swapaxes(imread(img_paths[img_idx]), 0, 1)
     print(img_paths[img_idx])
     root_name = img_paths[img_idx].stem
     print(f"simulation shape: {simulation_data.shape}")
     fake_stage_position_zyx_um = [
         0.0,
-        -1*yx_pixel_um*(simulation_data.shape[-2]//2),
-        -1*yx_pixel_um*(simulation_data.shape[-1]//2)
+        -1 * yx_pixel_um * (simulation_data.shape[-2] // 2),
+        -1 * yx_pixel_um * (simulation_data.shape[-1] // 2),
     ]
     fake_tile_id = 0
     round_id = 1
@@ -80,12 +81,15 @@ def convert_simulation(
     simufiles_folder.mkdir(exist_ok=True)
 
     # execute fake experiment. Don't write all metadata to images, just what we need.
-    stage_metadata_path = simufiles_folder / \
-        f"{root_name}_r{str(round_id).zfill(4)}_tile{str(fake_tile_id).zfill(4)}_stage_positions.csv"
-    current_stage_data = {'stage_x': float(fake_stage_position_zyx_um[2]),
-                          'stage_y': float(fake_stage_position_zyx_um[1]),
-                          'stage_z': float(fake_stage_position_zyx_um[0]),
-                          }
+    stage_metadata_path = (
+        simufiles_folder
+        / f"{root_name}_r{str(round_id).zfill(4)}_tile{str(fake_tile_id).zfill(4)}_stage_positions.csv"
+    )
+    current_stage_data = {
+        "stage_x": float(fake_stage_position_zyx_um[2]),
+        "stage_y": float(fake_stage_position_zyx_um[1]),
+        "stage_z": float(fake_stage_position_zyx_um[0]),
+    }
     write_metadata(current_stage_data, stage_metadata_path)
 
     # copy codebook and load file to simulated acquisition folder
@@ -95,9 +99,18 @@ def convert_simulation(
     # copy load bit_order file to simulated acquisition folder
     sim_acq_bitorder_path = simufiles_folder / Path("bit_order.csv")
     channels_wl = [str(wl) for wl in metadata["wavelength_channels"].values()]
-    channels_names = ["fiducial",] + [f"wl{n}" for n in range(num_bits)]
+    channels_names = [
+        "fiducial",
+    ] + [f"wl{n}" for n in range(num_bits)]
     df_experiment_order = pd.DataFrame(
-        [[1,] + [x for x in range(1, num_bits+1)]], columns=channels_names)
+        [
+            [
+                1,
+            ]
+            + [x for x in range(1, num_bits + 1)]
+        ],
+        columns=channels_names,
+    )
     df_experiment_order.to_csv(sim_acq_bitorder_path, index=False)
     experiment_order = df_experiment_order.values
 
@@ -111,16 +124,13 @@ def convert_simulation(
         channel_order = "forward"
     ri_s = float(metadata["microscope_parameters"]["RI_specimen"])
 
-    em_wavelengths_um = [float(wl)
-                         for wl in channels_wl]  # selected by channel IDs
+    em_wavelengths_um = [float(wl) for wl in channels_wl]  # selected by channel IDs
     # TODO check if it's necessary to fetch real ex wl values
     ex_wavelengths_um = em_wavelengths_um
     noise_map = None
-    affine_zyx_px = np.array([
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]], dtype=np.float32)
+    affine_zyx_px = np.array(
+        [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float32
+    )
 
     # Create datastore
     # ------------------------
@@ -276,10 +286,7 @@ def convert_simulation(
                 round=round_idx,
             )
             datastore.save_local_stage_position_zyx_um(
-                stage_pos_zyx_um,
-                affine_zyx_px,
-                tile=tile_idx,
-                round=round_idx
+                stage_pos_zyx_um, affine_zyx_px, tile=tile_idx, round=round_idx
             )
             datastore.save_local_wavelengths_um(
                 (ex_wavelengths_um[0], em_wavelengths_um[0]),
@@ -290,7 +297,7 @@ def convert_simulation(
             # write readout channels and metadata
             for bit_idx in tqdm(range(num_bits), desc="bit channels", leave=False):
                 datastore.save_local_corrected_image(
-                    raw_image[bit_idx+1],
+                    raw_image[bit_idx + 1],
                     tile=tile_idx,
                     psf_idx=bit_idx,
                     gain_correction=gain_corrected,
@@ -299,22 +306,25 @@ def convert_simulation(
                     bit=bit_idx,
                 )
                 datastore.save_local_wavelengths_um(
-                    (ex_wavelengths_um[bit_idx % len(channels_wl)],
-                     em_wavelengths_um[bit_idx % len(channels_wl)]),
+                    (
+                        ex_wavelengths_um[bit_idx % len(channels_wl)],
+                        em_wavelengths_um[bit_idx % len(channels_wl)],
+                    ),
                     tile=tile_idx,
                     bit=bit_idx,
                 )
 
     datastore.noise_map = np.zeros(
-        (3, correct_shape[1], correct_shape[2]), dtype=np.float32)
+        (3, correct_shape[1], correct_shape[2]), dtype=np.float32
+    )
     datastore._shading_maps = np.ones(
-        (3, correct_shape[1], correct_shape[2]), dtype=np.float32)
+        (3, correct_shape[1], correct_shape[2]), dtype=np.float32
+    )
     datastore_state = datastore.datastore_state
     datastore_state.update({"Corrected": True})
     datastore.datastore_state = datastore_state
 
 
 if __name__ == "__main__":
-    root_path = Path(
-        r"/home/hblanc01/Data/simu_igfl/grid_simu_SNR_SBR_Density")
+    root_path = Path(r"/home/hblanc01/Data/simu_igfl/grid_simu_SNR_SBR_Density")
     convert_simulation(root_path=root_path)

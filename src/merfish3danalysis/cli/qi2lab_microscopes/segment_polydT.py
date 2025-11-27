@@ -26,8 +26,13 @@ app.pretty_exceptions_enable = False
 
 
 @app.command()
-def run_cellpose(root_path,
-                 cellpose_parameters: dict):
+def run_cellpose(
+    root_path: Path,
+    normalization: tuple[float,float] = [1.0, 99.0],
+    diameter: int = 30,
+    flow_threshold: float = 0.4,
+    cellprob_threshold: float = 0.0
+):
     """Run cellpose and save ROIs
 
     Parameters
@@ -54,7 +59,7 @@ def run_cellpose(root_path,
     model = models.CellposeModel(gpu=True)
     normalize = {
         "normalize": True,
-        "percentile": cellpose_parameters['normalization'],
+        "percentile": normalization,
     }
 
     # run cellpose on fiducial max projection

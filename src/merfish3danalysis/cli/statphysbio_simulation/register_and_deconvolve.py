@@ -53,10 +53,7 @@ def local_register_data(root_path: Path):
     datastore.datastore_state = datastore_state
 
 
-def global_register_data(
-    root_path: Path,
-    create_max_proj_tiff: Optional[bool] = True
-):
+def global_register_data(root_path: Path, create_max_proj_tiff: Optional[bool] = True):
     """Register all tiles in first round in global coordinates.
 
     Parameters
@@ -65,7 +62,7 @@ def global_register_data(
         path to experiment
 
     create_max_proj_tiff: Optional[bool]
-        create max projection tiff in the segmentation/cellpose directory. 
+        create max projection tiff in the segmentation/cellpose directory.
         Default = True
     """
 
@@ -73,14 +70,11 @@ def global_register_data(
     datastore_path = root_path / Path(r"qi2labdatastore")
     datastore = qi2labDataStore(datastore_path)
 
-    affine_zyx_px = np.array([
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]
-    ], dtype=np.float32)
+    affine_zyx_px = np.array(
+        [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float32
+    )
 
-    origin = np.asarray([0., 0., 0.], dtype=np.float32)
+    origin = np.asarray([0.0, 0.0, 0.0], dtype=np.float32)
 
     spacing = np.asarray(datastore.voxel_size_zyx_um.copy(), dtype=np.float32)
 
@@ -93,7 +87,8 @@ def global_register_data(
 
     datastore.save_global_fidicual_image(
         fused_image=datastore.load_local_registered_image(
-            tile=0, round=0, return_future=False),
+            tile=0, round=0, return_future=False
+        ),
         affine_zyx_um=affine_zyx_px,
         origin_zyx_um=origin,
         spacing_zyx_um=spacing,
@@ -117,19 +112,19 @@ def global_register_data(
             Path("segmentation") / Path(filename)
         with TiffWriter(filename_path, bigtiff=True) as tif:
             metadata = {
-                'axes': 'YX',
-                'SignificantBits': 16,
-                'PhysicalSizeX': spacing_zyx_um[2],
-                'PhysicalSizeXUnit': 'µm',
-                'PhysicalSizeY': spacing_zyx_um[1],
-                'PhysicalSizeYUnit': 'µm',
+                "axes": "YX",
+                "SignificantBits": 16,
+                "PhysicalSizeX": spacing_zyx_um[2],
+                "PhysicalSizeXUnit": "µm",
+                "PhysicalSizeY": spacing_zyx_um[1],
+                "PhysicalSizeYUnit": "µm",
             }
             options = dict(
-                compression='zlib',
-                compressionargs={'level': 8},
+                compression="zlib",
+                compressionargs={"level": 8},
                 predictor=True,
-                photometric='minisblack',
-                resolutionunit='CENTIMETER',
+                photometric="minisblack",
+                resolutionunit="CENTIMETER",
             )
             tif.write(
                 fiducial_max_projection,
@@ -138,7 +133,7 @@ def global_register_data(
                     1e4 / spacing_zyx_um[2]
                 ),
                 **options,
-                metadata=metadata
+                metadata=metadata,
             )
 
     # update datastore state
@@ -149,8 +144,10 @@ def global_register_data(
 
 
 def main():
-    app()
-
+    # app()
+    manage_data_registration_states(
+        r"/home/hblanc01/Data/density_smFISH_flat/Nmols_1500/sim_acquisition"
+    )
 
 if __name__ == "__main__":
     main()

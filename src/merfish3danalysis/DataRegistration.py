@@ -6,6 +6,8 @@ cross-correlation and optical flow techniques.
 
 History:
 ---------
+- **2025/29**:
+    - Refactored to move background subtraction out of deconvolution step.
 - **2025/07**:
     - Implement anistropic downsampling for registration.
     - Implement RLGC deconvolution.
@@ -34,16 +36,18 @@ import numpy as np
 import warnings
 import os
 import multiprocessing as mp
-mp.set_start_method('spawn', force=True)
+
+mp.set_start_method("spawn", force=True)
+import os
+import warnings
+
 warnings.filterwarnings(
     "ignore",
     category=FutureWarning,
-    message=r".*cupyx\.jit\.rawkernel is experimental.*"
+    message=r".*cupyx\.jit\.rawkernel is experimental.*",
 )
 warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    message=r".*block stride.*last level.*"
+    "ignore", category=UserWarning, message=r".*block stride.*last level.*"
 )
 
 
@@ -52,46 +56,33 @@ def _apply_first_fiducial_on_gpu(
     gpu_id: int = 0
 ):
     import cupy as cp
-    import imagej
-    import io
-    import contextlib
-    import os
+
     cp.cuda.Device(gpu_id).use()
     from merfish3danalysis.utils.rlgc import chunked_rlgc
 
     raw0 = dr._datastore.load_local_corrected_image(
-        tile=dr._tile_id,
-        round=0,
-        return_future=False
+        tile=dr._tile_id, round=0, return_future=False
     )
 
-    stderr_buffer = io.StringIO()
-    with contextlib.redirect_stderr(stderr_buffer):
-        ij_success = False
-        while not (ij_success):
-            try:
-                os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
-                ij = imagej.init()
-                ij_success = True
-            except:
-                time.sleep(.5)
-                ij_success = False
-        ref_image_decon = chunked_rlgc(
-            image=raw0,
-            psf=dr._psfs[0, :],
-            gpu_id=0,
-            crop_yx=dr._crop_yx_decon,
-            bkd=dr._bkd_subtract_fiducial,
-            ij=ij
-        )
-        del ij
-        gc.collect()
+    if dr._bkd_subtract_polyDT:
+        from merfish3danalysis.utils.imageprocessing import subtract_background_imagej
+
+        bkd_image = subtract_background_imagej(raw0, 200)
+    else:
+        bkd_image = raw0.copy()
+
+    ref_image_decon = chunked_rlgc(
+        image=bkd_image,
+        psf=dr._psfs[0, :],
+        gpu_id=0,
+        crop_yx=dr._crop_yx_decon,
+    )
 
     dr._datastore.save_local_registered_image(
-        ref_image_decon,
+        ref_image_decon.clip(0, 2**16 - 1).astype(np.uint16),
         tile=dr._tile_id,
         deconvolution=True,
-        round=dr._round_ids[0]
+        round=dr._round_ids[0],
     )
     print(time_stamp(),
           f"Finished fiducial tile id: {dr._tile_id}; round id: round001.")
@@ -114,273 +105,235 @@ def _apply_fiducial_on_gpu(
     ----------
     dr : Registration
         DataRegistration instance (pickled into this process)
-    bit_list : list 
+    bit_list : list
         bit_ids to process on this GPU
     gpu_id : int
         physical GPU to bind in this process
     """
     import torch
+
     torch.cuda.set_device(gpu_id)
     import cupy as cp
+
     cp.cuda.Device(gpu_id).use()
 
-    import imagej
-    import io
-    import contextlib
     from merfish3danalysis.utils.registration import compute_warpfield
     from merfish3danalysis.utils.registration import (
         apply_transform,
-        compute_rigid_transform
+        compute_rigid_transform,
     )
     from merfish3danalysis.utils.imageprocessing import downsample_image_anisotropic
 
-    stderr_buffer = io.StringIO()
-    with contextlib.redirect_stderr(stderr_buffer):
+    for r_idx, round_id in enumerate(round_list):
 
-        ij_success = False
-        while not (ij_success):
-            try:
-                os.environ.setdefault("CLIJ_OPENCL_ALLOWED_DEVICE_TYPE", "CPU")
-                ij = imagej.init()
-                ij_success = True
-            except:
-                time.sleep(.5)
-                ij_success = False
-        for r_idx, round_id in enumerate(round_list):
+        test = dr._datastore.load_local_registered_image(
+            tile=dr._tile_id, round=round_id, return_future=False
+        )
+        if test is None:
+            has_reg_decon_data = False
+        else:
+            has_reg_decon_data = True
 
-            test = dr._datastore.load_local_registered_image(
-                tile=dr._tile_id,
-                round=round_id,
-                return_future=False
-            )
-            if test is None:
-                has_reg_decon_data = False
+        if not (has_reg_decon_data) or dr._overwrite_registered:
+            if dr._decon_fiducial:
+                ref_image_decon_float = dr._datastore.load_local_registered_image(
+                    tile=dr._tile_id, round=dr._round_ids[0], return_future=False
+                ).astype(np.float32)
             else:
-                has_reg_decon_data = True
-
-            if not (has_reg_decon_data) or dr._overwrite_registered:
-                if dr._decon_fiducial:
-                    ref_image_decon_float = dr._datastore.load_local_registered_image(
-                        tile=dr._tile_id,
-                        round=dr._round_ids[0],
-                        return_future=False
-                    ).astype(np.float32)
-                else:
-                    ref_image = dr._datastore.load_local_corrected_image(
-                        tile=dr._tile_id,
-                        round=dr._round_ids[0],
-                        return_future=False
-                    )
-                    if dr._bkd_subtract_fiducial:
-                        imp_array = ij.py.to_imageplus(ref_image)
-                        imp_array.setStack(imp_array.getStack().duplicate())
-                        imp_array.show()
-                        ij.IJ.run(imp_array, "Subtract Background...",
-                                  "rolling=200 disable stack")
-                        imp_array.show()
-                        ij.py.sync_image(imp_array)
-                        bkd_output = ij.py.from_java(imp_array.duplicate())
-                        imp_array.close()
-                        ref_image_bkd = np.swapaxes(bkd_output.data.transpose(
-                            2, 1, 0), 1, 2).clip(0, 2**16-1).astype(np.uint16).copy()
-                        ref_image_decon_float = ref_image_bkd.copy().astype(np.float32)
-                        del imp_array, ref_image, bkd_output, ref_image_bkd
-                    else:
-                        ref_image_decon_float = ref_image.copy().astype(np.float32)
-                        del ref_image
-
-                raw = dr._datastore.load_local_corrected_image(
-                    tile=dr._tile_id,
-                    round=round_id,
-                    return_future=False
+                ref_image = dr._datastore.load_local_corrected_image(
+                    tile=dr._tile_id, round=dr._round_ids[0], return_future=False
                 )
+                if dr._bkd_subtract_polyDT:
+                    from merfish3danalysis.utils.imageprocessing import (
+                        subtract_background_imagej,
+                    )
 
-                if dr._decon_fiducial:
-                    from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
-                    if dr._datastore.microscope_type == "2D":
-                        imp_array = ij.py.to_imageplus(raw)
-                        imp_array.setStack(imp_array.getStack().duplicate())
-                        imp_array.show()
-                        ij.IJ.run(imp_array, "Subtract Background...",
-                                  "rolling=200 disable stack")
-                        imp_array.show()
-                        ij.py.sync_image(imp_array)
-                        bkd_output = ij.py.from_java(imp_array.duplicate())
-                        imp_array.close()
-                        raw_bkd = np.swapaxes(bkd_output.data.transpose(2, 1, 0), 1, 2).clip(
-                            0, 2**16-1).astype(np.uint16).copy()
-                        del imp_array, bkd_output, raw
-                        mov_image_decon = np.zeros_like(
-                            raw_bkd, dtype=np.float32)
-                        for z_idx in range(raw.shape[0]):
-                            mov_image_decon[z_idx, :] = rlgc_biggs(
-                                image=raw[z_idx, :],
-                                psf=dr._psfs[0, :],
-                                gpu_id=gpu_id,
-                                eager_mode=True
-                            )
-                        mov_image_decon = mov_image_decon.clip(
-                            0, 2**16-1).astype(np.uint16)
-                    else:
-                        mov_image_decon = chunked_rlgc(
-                            image=raw,
+                    ref_image_decon_float = subtract_background_imagej(ref_image, 200)
+                else:
+                    ref_image_decon_float = ref_image.copy().astype(np.float32)
+                    del ref_image
+
+            raw = dr._datastore.load_local_corrected_image(
+                tile=dr._tile_id, round=round_id, return_future=False
+            )
+
+            if dr._decon_fiducial:
+                from merfish3danalysis.utils.rlgc import chunked_rlgc
+
+                if dr._bkd_subtract_fiducial:
+                    from merfish3danalysis.utils.imageprocessing import (
+                        subtract_background_imagej,
+                    )
+
+                    bkd_image = subtract_background_imagej(raw, 200)
+                else:
+                    bkd_image = raw.copy()
+                del raw
+
+                if dr._datastore.microscope_type == "2D":
+
+                    mov_image_decon = np.zeros_like(bkd_image, dtype=np.float32)
+                    for z_idx in range(raw.shape[0]):
+                        mov_image_decon[z_idx, :] = chunked_rlgc(
+                            image=bkd_image[z_idx, :],
                             psf=dr._psfs[0, :],
                             gpu_id=gpu_id,
-                            crop_yx=dr._crop_yx_decon,
-                            bkd=True,
-                            ij=ij
+                            crop_yx=raw.shape[-1],
                         )
+                    mov_image_decon = mov_image_decon.clip(0, 2**16 - 1).astype(
+                        np.uint16
+                    )
+                    del bkd_image
                 else:
-                    if dr._bkd_subtract_fiducial:
-                        imp_array = ij.py.to_imageplus(raw)
-                        imp_array.setStack(imp_array.getStack().duplicate())
-                        imp_array.show()
-                        ij.IJ.run(imp_array, "Subtract Background...",
-                                  "rolling=200 disable stack")
-                        imp_array.show()
-                        ij.py.sync_image(imp_array)
-                        bkd_output = ij.py.from_java(imp_array.duplicate())
-                        imp_array.close()
-                        mov_image_decon = np.swapaxes(bkd_output.data.transpose(
-                            2, 1, 0), 1, 2).clip(0, 2**16-1).astype(np.uint16).copy()
-                        del imp_array, raw, bkd_output
-                    else:
-                        mov_image_decon = raw.copy().astype(np.uint16)
-                        del raw
+                    mov_image_decon = chunked_rlgc(
+                        image=bkd_image,
+                        psf=dr._psfs[0, :],
+                        gpu_id=gpu_id,
+                        crop_yx=dr._crop_yx_decon,
+                    )
+                    mov_image_decon = mov_image_decon.clip(0, 2**16 - 1).astype(
+                        np.uint16
+                    )
+                    del bkd_image
+            else:
+                if dr._bkd_subtract_fiducial:
+                    from merfish3danalysis.utils.imageprocessing import (
+                        subtract_background_imagej,
+                    )
 
-                mov_image_decon_float = mov_image_decon.copy().astype(np.float32)
-                del mov_image_decon
-
-                if dr._datastore.microscope_type == "3D":
-                    downsample_factors = [3, 9, 9]
-                    if max(downsample_factors) > 1:
-                        ref_image_decon_float_ds = downsample_image_anisotropic(
-                            ref_image_decon_float, downsample_factors
-                        )
-                        mov_image_decon_float_ds = downsample_image_anisotropic(
-                            mov_image_decon_float, downsample_factors
-                        )
-                    else:
-                        ref_image_decon_float_ds = ref_image_decon_float.copy()
-                        mov_image_decon_float_ds = mov_image_decon_float.copy()
+                    bkd_image = subtract_background_imagej(raw, 200)
                 else:
-                    downsample_factors = [1, 3, 3]
-                    if max(downsample_factors) > 1:
-                        ref_image_decon_float_ds = downsample_image_anisotropic(
-                            ref_image_decon_float, downsample_factors
-                        )
-                        mov_image_decon_float_ds = downsample_image_anisotropic(
-                            mov_image_decon_float, downsample_factors
-                        )
-                    else:
-                        ref_image_decon_float_ds = ref_image_decon_float.copy()
-                        mov_image_decon_float_ds = mov_image_decon_float.copy()
+                    bkd_image = raw.copy()
 
-                _, lowres_xyz_shift = compute_rigid_transform(
-                    ref_image_decon_float_ds,
-                    mov_image_decon_float_ds,
-                    downsample_factors=downsample_factors,
-                    mask=None,
-                    projection=None,
-                    gpu_id=gpu_id
+                mov_image_decon = bkd_image.copy().astype(np.uint16)
+                del raw, bkd_image
+
+            mov_image_decon_float = mov_image_decon.copy().astype(np.float32)
+            del mov_image_decon
+
+            if dr._datastore.microscope_type == "3D":
+                downsample_factors = [3, 9, 9]
+                if max(downsample_factors) > 1:
+                    ref_image_decon_float_ds = downsample_image_anisotropic(
+                        ref_image_decon_float, downsample_factors
+                    )
+                    mov_image_decon_float_ds = downsample_image_anisotropic(
+                        mov_image_decon_float, downsample_factors
+                    )
+                else:
+                    ref_image_decon_float_ds = ref_image_decon_float.copy()
+                    mov_image_decon_float_ds = mov_image_decon_float.copy()
+            else:
+                downsample_factors = [1, 3, 3]
+                if max(downsample_factors) > 1:
+                    ref_image_decon_float_ds = downsample_image_anisotropic(
+                        ref_image_decon_float, downsample_factors
+                    )
+                    mov_image_decon_float_ds = downsample_image_anisotropic(
+                        mov_image_decon_float, downsample_factors
+                    )
+                else:
+                    ref_image_decon_float_ds = ref_image_decon_float.copy()
+                    mov_image_decon_float_ds = mov_image_decon_float.copy()
+
+            _, lowres_xyz_shift = compute_rigid_transform(
+                ref_image_decon_float_ds,
+                mov_image_decon_float_ds,
+                downsample_factors=downsample_factors,
+                mask=None,
+                projection=None,
+                gpu_id=gpu_id,
+            )
+
+            xyz_shift = np.asarray(lowres_xyz_shift, dtype=np.float32)
+            xyz_shift_float = [round(float(v), 1) for v in lowres_xyz_shift]
+
+            initial_xyz_transform = sitk.TranslationTransform(3, xyz_shift_float)
+            warped_mov_image_decon_float = apply_transform(
+                ref_image_decon_float, mov_image_decon_float, initial_xyz_transform
+            )
+            del mov_image_decon_float
+            gc.collect()
+
+            mov_image_decon_float = warped_mov_image_decon_float.copy().astype(
+                np.float32
+            )
+            del warped_mov_image_decon_float
+            gc.collect()
+
+            dr._datastore.save_local_rigid_xform_xyz_px(
+                rigid_xform_xyz_px=xyz_shift, tile=dr._tile_id, round=round_id
+            )
+
+            if dr._perform_optical_flow:
+
+                data_registered, warp_field, block_size, block_stride = (
+                    compute_warpfield(
+                        ref_image_decon_float, mov_image_decon_float, gpu_id=gpu_id
+                    )
                 )
 
-                xyz_shift = np.asarray(lowres_xyz_shift, dtype=np.float32)
-                xyz_shift_float = [round(float(v), 1)
-                                   for v in lowres_xyz_shift]
-
-                # print(time_stamp(), f"GPU {gpu_id}: processed tile id: {dr._tile_id}; round id: {round_id}; rigid xyz offset: {xyz_shift_float}.")
-
-                initial_xyz_transform = sitk.TranslationTransform(
-                    3, xyz_shift_float)
-                warped_mov_image_decon_float = apply_transform(
-                    ref_image_decon_float, mov_image_decon_float, initial_xyz_transform
-                )
-                del mov_image_decon_float
-                gc.collect()
-
-                mov_image_decon_float = warped_mov_image_decon_float.copy().astype(np.float32)
-                del warped_mov_image_decon_float
-                gc.collect()
-
-                dr._datastore.save_local_rigid_xform_xyz_px(
-                    rigid_xform_xyz_px=xyz_shift,
+                dr._datastore.save_coord_of_xform_px(
+                    of_xform_px=warp_field,
                     tile=dr._tile_id,
-                    round=round_id
+                    block_size=block_size,
+                    block_stride=block_stride,
+                    round=round_id,
                 )
 
-                if dr._perform_optical_flow:
+                data_registered = data_registered.clip(0, 2**16 - 1).astype(np.uint16)
 
-                    data_registered, warp_field, block_size, block_stride = compute_warpfield(
-                        ref_image_decon_float,
-                        mov_image_decon_float,
-                        gpu_id=gpu_id
-                    )
-
-                    dr._datastore.save_coord_of_xform_px(
-                        of_xform_px=warp_field,
-                        tile=dr._tile_id,
-                        block_size=block_size,
-                        block_stride=block_stride,
-                        round=round_id
-                    )
-
-                    data_registered = data_registered.clip(
-                        0, 2**16-1).astype(np.uint16)
-
-                    del warp_field
-                    gc.collect()
-                else:
-                    data_registered = mov_image_decon_float.clip(
-                        0, 2**16-1).astype(np.uint16)
-
-                if dr.save_all_fiducial_registered:
-                    dr._datastore.save_local_registered_image(
-                        registered_image=data_registered.astype(np.uint16),
-                        tile=dr._tile_id,
-                        deconvolution=True,
-                        round=round_id
-                    )
-                print(
-                    time_stamp(), f"Finished fiducial tile id: {dr._tile_id}; round id: {round_id}.")
-
-                del data_registered
+                del warp_field
                 gc.collect()
+            else:
+                data_registered = mov_image_decon_float.clip(0, 2**16 - 1).astype(
+                    np.uint16
+                )
 
+            if dr.save_all_fiducial_registered:
+                dr._datastore.save_local_registered_image(
+                    registered_image=data_registered.astype(np.uint16),
+                    tile=dr._tile_id,
+                    deconvolution=True,
+                    round=round_id,
+                )
+            print(
+                time_stamp(),
+                f"Finished fiducial tile id: {dr._tile_id}; round id: {round_id}.",
+            )
+
+            del data_registered
+            gc.collect()
+
+            try:
+                cp.cuda.Stream.null.synchronize()
+                cp.get_default_memory_pool().free_all_blocks()
+                cp.get_default_pinned_memory_pool().free_all_blocks()
                 try:
-                    cp.cuda.Stream.null.synchronize()
-                    cp.get_default_memory_pool().free_all_blocks()
-                    cp.get_default_pinned_memory_pool().free_all_blocks()
-                    try:
-                        import cupyx
-                        cupyx.scipy.fft.clear_plan_cache()
-                    except Exception:
-                        pass
-                    try:
-                        cp.fft.config.get_plan_cache().clear()
-                    except Exception:
-                        pass
+                    import cupyx
+
+                    cupyx.scipy.fft.clear_plan_cache()
                 except Exception:
                     pass
-        del ij
-        gc.collect()
+                try:
+                    cp.fft.config.get_plan_cache().clear()
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
     return True
 
 
-def _apply_bits_on_gpu(
-    dr,
-    bit_list: list,
-    gpu_id: int = 0
-):
+def _apply_bits_on_gpu(dr, bit_list: list, gpu_id: int = 0):
     """
     Run the “deconvolve→rigid+optical‐flow→UFish” loop for a subset of bits on a single GPU.
 
     Parameters
     ----------
-    dr       : 
+    dr       :
         DataRegistration instance (pickled into this process)
-    bit_list : list 
+    bit_list : list
         bit_ids to process on this GPU
     gpu_id : int
         physical GPU to bind in this process
@@ -394,8 +347,10 @@ def _apply_bits_on_gpu(
 
     from warpfield.warp import warp_volume
     import os
+
     os.environ["ORT_LOG_SEVERITY_LEVEL"] = "3"
     import onnxruntime as ort
+
     ort.set_default_logger_severity(3)
     from merfish3danalysis.utils.rlgc import chunked_rlgc, rlgc_biggs
     from merfish3danalysis.utils.registration import apply_transform
@@ -435,25 +390,23 @@ def _apply_bits_on_gpu(
             # deconvolution
             if dr._decon_bits:
                 if dr._datastore.microscope_type == "2D":
-                    decon_image = np.zeros_like(
-                        corrected_image, dtype=np.float32)
+                    decon_image = np.zeros_like(corrected_image, dtype=np.float32)
                     for z_idx in range(corrected_image.shape[0]):
-                        decon_image[z_idx, :] = rlgc_biggs(
+                        decon_image[z_idx, :] = chunked_rlgc(
                             image=corrected_image[z_idx, :],
                             psf=dr._psfs[psf_idx, :],
                             gpu_id=gpu_id,
-                            eager_mode=False
+                            crop_yx=corrected_image.shape[-1],
                         )
-                    decon_image = decon_image.clip(
-                        0, 2**16-1).astype(np.uint16)
+                    decon_image = decon_image.clip(0, 2**16 - 1).astype(np.uint16)
                 else:
                     decon_image = chunked_rlgc(
                         image=corrected_image,
                         psf=dr._psfs[psf_idx, :],
                         gpu_id=gpu_id,
                         crop_yx=dr._crop_yx_decon,
-                        eager_mode=True,
                     )
+                    decon_image = decon_image.clip(0, 2**16 - 1).astype(np.uint16)
             else:
                 decon_image = corrected_image.copy()
 
@@ -471,10 +424,12 @@ def _apply_bits_on_gpu(
                 del decon_image
 
                 if dr._perform_optical_flow:
-                    warp_field, block_size, block_stride = dr._datastore.load_coord_of_xform_px(
-                        tile=dr._tile_id,
-                        round=dr._round_ids[r_idx],
-                        return_future=False
+                    warp_field, block_size, block_stride = (
+                        dr._datastore.load_coord_of_xform_px(
+                            tile=dr._tile_id,
+                            round=dr._round_ids[r_idx],
+                            return_future=False,
+                        )
                     )
 
                     block_size = cp.asarray(block_size, dtype=cp.float32)
@@ -485,7 +440,7 @@ def _apply_bits_on_gpu(
                         block_stride,
                         cp.array(-block_size / block_stride / 2),
                         out=None,
-                        gpu_id=gpu_id
+                        gpu_id=gpu_id,
                     )
                     data_reg = cp.asnumpy(
                         decon_image_warped_cp).astype(np.float32)
@@ -502,7 +457,7 @@ def _apply_bits_on_gpu(
                 gc.collect()
 
             # clip to uint16
-            data_reg = data_reg.clip(0, 2**16-1).astype(np.uint16)
+            data_reg = data_reg.clip(0, 2**16 - 1).astype(np.uint16)
 
             # Spotmap
             if use_Spotiflow:
@@ -548,8 +503,9 @@ def _apply_bits_on_gpu(
                 zmax = min(image.shape[0], zmin + rz)
                 ymax = min(image.shape[1], ymin + ry)
                 xmax = min(image.shape[2], xmin + rx)
-                roi = image[int(zmin):int(zmax), int(
-                    ymin):int(ymax), int(xmin):int(xmax)]
+                roi = image[
+                    int(zmin) : int(zmax), int(ymin) : int(ymax), int(xmin) : int(xmax)
+                ]
                 return np.sum(roi)
 
             spotmap_loc["sum_prob_pixels"] = spotmap_loc.apply(
@@ -792,8 +748,7 @@ class DataRegistration:
             )
 
             stage_position, _ = self._datastore.load_local_stage_position_zyx_um(
-                tile=self._tile_id,
-                round=round_id
+                tile=self._tile_id, round=round_id
             )
 
             stage_positions.append(stage_position)
@@ -805,8 +760,7 @@ class DataRegistration:
     def _generate_registrations(self):
         """Generate registered, deconvolved fiducial data and save to datastore."""
         test = self._datastore.load_local_registered_image(
-            tile=self._tile_id,
-            round=self._round_ids[0]
+            tile=self._tile_id, round=self._round_ids[0]
         )
 
         if test is None:
@@ -828,8 +782,9 @@ class DataRegistration:
 
         # 2) Grab all rounds IDs after round 0 and split into `num_gpus` chunks
         all_rounds = list(self._round_ids[1:])
-        chunk_size = (len(all_rounds) + self._num_gpus -
-                      1) // self._num_gpus  # ceiling division
+        chunk_size = (
+            len(all_rounds) + self._num_gpus - 1
+        ) // self._num_gpus  # ceiling division
 
         # 3) Launch one process per GPU (only as many as needed)
         processes = []
@@ -864,12 +819,14 @@ class DataRegistration:
         # 1) How many GPUs do we have?
         if self._num_gpus == 0:
             raise RuntimeError(
-                "No GPUs detected. Cannot run _apply_registration_to_bits().")
+                "No GPUs detected. Cannot run _apply_registration_to_bits()."
+            )
 
         # 2) Grab all bit IDs and split into `num_gpus` chunks
         all_bits = list(self._bit_ids)
-        chunk_size = (len(all_bits) + self._num_gpus -
-                      1) // self._num_gpus  # ceiling division
+        chunk_size = (
+            len(all_bits) + self._num_gpus - 1
+        ) // self._num_gpus  # ceiling division
 
         # 3) Launch one process per GPU (only as many as needed)
         processes = []

@@ -24,6 +24,9 @@ def decode_pixels(
     magnitude_threshold: tuple[float,float]  =[0.9, 10.0],
     fdr_target: float = 0.05,
     run_baysor: bool = True,
+    merfish_bits: int = None,
+    smFISH: bool = False,
+    skip_optimization: bool = False
 ):
     """Perform pixel decoding.
 
@@ -48,7 +51,8 @@ def decode_pixels(
     # initialize datastore
     datastore_path = root_path / Path(r"qi2labdatastore")
     datastore = qi2labDataStore(datastore_path)
-    merfish_bits = datastore.num_bits
+    if merfish_bits is None:
+        merfish_bits = datastore.num_bits
 
     # initialize decodor class
     decoder = PixelDecoder(
@@ -57,17 +61,21 @@ def decode_pixels(
         merfish_bits=merfish_bits, 
         num_gpus=num_gpus,
         verbose=1,
-        
+        smFISH=smFISH
     )
 
-    # optimize normalization weights through iterative decoding and update
-    decoder.optimize_normalization_by_decoding(
-        n_random_tiles=20,
-        n_iterations=5,
-        minimum_pixels=minimum_pixels_per_RNA,
-        ufish_threshold=ufish_threshold,
-        magnitude_threshold=magnitude_threshold
-    )
+    if smFISH:
+        decoder._distance_threshold = 1.0
+
+    if not skip_optimization:
+        # optimize normalization weights through iterative decoding and update
+        decoder.optimize_normalization_by_decoding(
+            n_random_tiles=20,
+            n_iterations=5,
+            minimum_pixels=minimum_pixels_per_RNA,
+            ufish_threshold=ufish_threshold,
+            magnitude_threshold=magnitude_threshold
+        )
 
     # decode all tiles using iterative normalization weights
     decoder.decode_all_tiles(
